@@ -38,14 +38,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 
-/**
- * This is the main activity of the HelloIOIO example application.
- * 
- * It displays a toggle button on the screen, which enables control of the
- * on-board LED. This example shows a very simple usage of the IOIO, by using
- * the {@link AbstractIOIOActivity} class. For a more advanced use case, see the
- * HelloIOIOPower example.
- */
+
 public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventListener,  OnUtteranceCompletedListener{
 	private TextView tv1_;
 	private TextView xCoor; // declare X axis object
