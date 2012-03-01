@@ -16,6 +16,7 @@ import java.util.Locale;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -33,6 +34,8 @@ import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.TextToSpeech.OnUtteranceCompletedListener;
 import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -44,6 +47,11 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	private TextView xCoor; // declare X axis object
 	private TextView yCoor; // declare Y axis object
 	private TextView zCoor; // declare Z axis object
+	private EditText distThresh;
+	
+	private Button rightSensorButton;
+	private Button leftSensorButton;
+	private Button setDistThreshButton;
 	
 	private boolean left_buttonPrevState;
 	private boolean right_buttonPrevState;
@@ -101,9 +109,30 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main);
+		
+		
+		
+		rightSensorButton = (Button) findViewById(R.id.rightSensorButton);
+		leftSensorButton = (Button) findViewById(R.id.leftSensorButton);
+		
+		rightSensorButton.setBackgroundDrawable(getResources().getDrawable(R.drawable.blackbutton));
+		rightSensorButton.setTextColor(Color.WHITE);
+		leftSensorButton.setBackgroundDrawable(getResources().getDrawable(R.drawable.blackbutton));
+		leftSensorButton.setTextColor(Color.WHITE);
+		
 		tv1_ = (TextView) findViewById(R.id.textView1);
 		tv1_.setSingleLine(false);
+		tv1_.setTextSize(14);
 		
+		distThresh = (EditText) findViewById(R.id.distThresh);
+		distThresh.setText(Integer.toString(distance_threshold_inches));
+		setDistThreshButton = (Button) findViewById(R.id.setDistThresholdButton);
+		
+		setDistThreshButton.setOnClickListener(new Button.OnClickListener() {
+			public void onClick(View v) {
+		        distance_threshold_inches = Integer.parseInt(distThresh.getText().toString());
+		      }
+		  });
 		
 	    SipProfile.Builder builder = null;
 		try {
@@ -138,6 +167,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		});
 		
 		 mList = (ListView) findViewById(R.id.ListView01);
+
 		// match.add(0, "cancel");
 		 
 		 initializeManager();
@@ -399,6 +429,9 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 		 */
 		@Override
 		protected void setup() throws ConnectionLostException {
+			
+			log("Connection to XBee establised.");
+			
 			led_crash = ioio_.openDigitalOutput(3, false);
 			led_left = ioio_.openDigitalOutput(2, false);
 			led_right = ioio_.openDigitalOutput(1, false);
@@ -406,9 +439,13 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 			sensorValueR_input = ioio_.openAnalogInput(40); //bar 5
 			sensorValueL_input = ioio_.openAnalogInput(41); //bar 6
 			
-			log("Connecting to XBee UART...\n");
+			log("Connecting IOIO UART to XBee...");
 			
 			uart_ = ioio_.openUart(4, 5, 57600, Uart.Parity.NONE, Uart.StopBits.ONE); //blue is 4, green is 5
+			
+			if(uart_ != null) log("Success.");
+			
+			log("Listening to sensors...");
 			
 			xbeeIn = uart_.getInputStream();
 			xbeeOut = uart_.getOutputStream();
@@ -447,13 +484,15 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 				if((inchvalueL < distance_threshold_inches) && !prev_leftVal){
 							led_left.write(true);
 							xbeeOut.write(72);
-							log("Transmitted Left: H");
+							setSensorButtonBackground(leftSensorButton, R.drawable.redbutton);
+							//log("Transmitted Left: H");
 							prev_leftVal = true;
 				} 
 				else if(!(inchvalueL < distance_threshold_inches) && prev_leftVal){
 					led_left.write(false);
 					xbeeOut.write(76);
-					log("Transmitted Left: L"); 
+					setSensorButtonBackground(leftSensorButton, R.drawable.blackbutton);
+					//log("Transmitted Left: L"); 
 					prev_leftVal = false;	
 				}
 			}
@@ -466,13 +505,15 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 				if((inchvalueR < distance_threshold_inches) && !prev_rightVal){
 							led_right.write(true);
 							xbeeOut.write(74);
-							log("Transmitted Right: H (J)"); 
+							setSensorButtonBackground(rightSensorButton, R.drawable.bluebutton);
+							//log("Transmitted Right: H (J)"); 
 							prev_rightVal = true;
 				} 
 				else if(!(inchvalueR < distance_threshold_inches) && prev_rightVal){
 					led_right.write(false);
 					xbeeOut.write(75);
-					log("Transmitted Right: L (K)"); 
+					setSensorButtonBackground(rightSensorButton, R.drawable.blackbutton);
+					//log("Transmitted Right: L (K)"); 
 					prev_rightVal = false;	
 				}
 			}
@@ -487,31 +528,13 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 			//if x < -2 send BT audio warning
 			if(leaning_right && !prevLean_right && (inchvalueR < distance_threshold_inches)){
 				prevLean_right = leaning_right;
-				myHash = new HashMap<String, String>();
-	       		myHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "Text_Voice");
-	       		amanager.setBluetoothScoOn(true);
-	            amanager.startBluetoothSco();
-	            myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM,
-	                    String.valueOf(AudioManager.STREAM_VOICE_CALL));
-	            amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL,
-	                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-	       		String warning = "Right Blindspot Warning";
-	       		tts.speak(warning, TextToSpeech.QUEUE_FLUSH, myHash);
+				sendBTaudio("Right Blindspot Warning");
 			}
 
 			//if x > 2 send BT audio warning
 			if(leaning_left && !prevLean_left && (inchvalueL < distance_threshold_inches)){
 				prevLean_left = leaning_left;
-				myHash = new HashMap<String, String>();
-	       		myHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "Text_Voice");
-	       		amanager.setBluetoothScoOn(true);
-	            amanager.startBluetoothSco();
-	            myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM,
-	                    String.valueOf(AudioManager.STREAM_VOICE_CALL));
-	            amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL,
-	                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-	       		String warning = "Left Blindspot Warning";
-	       		tts.speak(warning, TextToSpeech.QUEUE_FLUSH, myHash);
+				sendBTaudio("Left Blindspot Warning");
 			}
 
 			
@@ -528,23 +551,10 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 			           			           
 			           if ( Temp2.matches("P+")){
 			        	   led_crash.write(true);
-			        	    
-				       		  
-				       		  
-			        	   myHash = new HashMap<String, String>();
-			       		   myHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "Text_Voice");
-			       		   amanager.setBluetoothScoOn(true);
-			               amanager.startBluetoothSco();
-			               myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM,
-			                       String.valueOf(AudioManager.STREAM_VOICE_CALL));
-			               amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL,
-			                       AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-			       		   String warning = "Crash detected. Dialing 9 1 1. Say cancel for false alarm.";
-			       		   tts.speak(warning, TextToSpeech.QUEUE_FLUSH, myHash);
-			       		   
-			       		//startVoiceRecognitionActivity();
-			       		   
-			       		View v = findViewById(R.id.title); //fetch a View: any one will do
+			        	 
+			        	  sendBTaudio("Crash detected. Dialing 9 1 1. Say cancel for false alarm.");
+
+			       		View v = findViewById(R.id.calibratebutton1);
 
 			       		v.post(new Runnable(){ public void run(){ mSpeechRecognizer.startListening(mRecognizerIntent); }});
 			       	
@@ -574,7 +584,18 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
         
 		
 	}
-
+	void setSensorButtonBackground(final Button button, final int drawable) {
+		runOnUiThread(new Runnable() { 
+            @Override 
+            public void run() { 
+            	button.setBackgroundDrawable(getResources().getDrawable(drawable));
+            	if(drawable == R.drawable.blackbutton) button.setTextColor(Color.WHITE);
+            	else button.setTextColor(Color.BLACK);
+            	
+            } 
+        }); 
+    	 
+    } 
 	void log(final String logString) {
 		runOnUiThread(new Runnable() { 
             @Override 
@@ -583,7 +604,19 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
             } 
         }); 
     	 
-    } 		
+    }
+	void sendBTaudio(final String ttsString){
+		myHash = new HashMap<String, String>();
+		myHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "Text_Voice");
+		amanager.setBluetoothScoOn(true);
+        amanager.startBluetoothSco();
+        myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM,
+                String.valueOf(AudioManager.STREAM_VOICE_CALL));
+        amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+	    //String warning = "Crash detected. Dialing 9 1 1. Say cancel for false alarm.";
+	    tts.speak(ttsString, TextToSpeech.QUEUE_FLUSH, myHash);
+	}
 	/**
 	 * A method to create our IOIO thread.
 	 * 
