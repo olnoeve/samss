@@ -546,7 +546,7 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 			       		   
 			       		//startVoiceRecognitionActivity();
 			       		   
-			       		View v = findViewById(R.id.title); //fetch a View: any one will do
+			       		View v = findViewById(R.id.calibratebutton1); //fetch a View: any one will do
 
 			       		v.post(new Runnable(){ public void run(){ mSpeechRecognizer.startListening(mRecognizerIntent); }});
 			       	

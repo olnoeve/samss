@@ -4,72 +4,165 @@
     android:layout_width="fill_parent"
     android:layout_height="fill_parent"
     >
-<TextView  
-    android:layout_width="fill_parent" 
-    android:layout_height="wrap_content" 
-    android:text="@string/hello"
-    android:id="@+id/title"/>
-<TableLayout
-	xmlns:android="http://schemas.android.com/apk/res/android"
-	android:layout_width="fill_parent"
-	android:layout_height="150px">
 
-	<TableRow>
-	<TextView
-		android:id="@+id/xcoor"
-		android:text="X Coordinate: "
-		android:layout_width="wrap_content"
-		android:layout_height="wrap_content"
-	/>
-	</TableRow>
+<LinearLayout
+    android:id="@+id/linearLayout1"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content" >
 
-	<TableRow>
-	<TextView
-		android:id="@+id/ycoor"
-		android:text="Y Coordinate: "
-		android:layout_width="wrap_content"
-		android:layout_height="wrap_content"
-	/>
-	</TableRow>
-
-	<TableRow>
-	<TextView
-		android:id="@+id/zcoor"
-		android:text="Z Coordinate: "
-		android:layout_width="wrap_content"
-		android:layout_height="wrap_content"
-	/>
-	</TableRow>
-
-	<TableRow >
-		<Button
-        android:id="@+id/calibratebutton1"
-        android:layout_width="match_parent"
+    <Button
+        android:id="@+id/leftSensorButton"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="calibrate" android:textStyle="bold"
-        android:onClick="onCalibrateButtonClick"/>  
-        </TableRow>
-</TableLayout>
+        android:layout_marginTop="5dip"
+        android:layout_weight="0.26"
+        android:background="@drawable/redbutton"
+        android:text="Left" />
 
-<ScrollView   
-    android:id="@+id/ScrollView01"  
-    android:layout_width="fill_parent"   
-    android:layout_height="150dp"
-    android:fillViewport="true">
+    <Button
+        android:id="@+id/rightSensorButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dip"
+        android:layout_weight="0.26"
+        android:background="@drawable/bluebutton"
+        android:text="Right" />
 
-<TextView
-    android:id="@+id/textView1"
+</LinearLayout>
+
+<TableLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_gravity="bottom" />
+    android:stretchColumns="0,1,2" >
 
-</ScrollView>
-<ListView   
-    android:id="@+id/ListView01"  
-    android:layout_width="fill_parent"   
+	<TableRow android:padding="10dip">
+		<TextView
+			android:id="@+id/xcoor"
+			android:text="X: "
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:layout_column="0"/>
+	
+		<TextView
+			android:id="@+id/ycoor"
+			android:text="Y: "
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:layout_column="1"/>
+		
+		<TextView
+			android:id="@+id/zcoor"
+			android:text="Z: "
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:layout_column="2"/>
+	
+	</TableRow>
+
+
+	<TableRow>
+	    
+	    <LinearLayout
+		    android:id="@+id/linearLayout2"
+		    android:layout_width="match_parent"
+		    android:layout_height="wrap_content"
+		    android:layout_span="3" >
+		    
+		    <Button
+		        android:id="@+id/calibratebutton1"
+		        android:layout_width="158dp"
+		        android:layout_height="match_parent"
+		        android:onClick="onCalibrateButtonClick"
+		        android:text="Calibrate Accelerometer"
+		        android:textStyle="bold" />
+ 
+		   	<Button
+		   	    android:id="@+id/voipChatButton"
+		   	    android:layout_width="match_parent"
+		   	    android:layout_height="match_parent"
+		   	    android:text="Start Voip Chat"
+		   	    android:textStyle="bold" />
+	        
+	    </LinearLayout>
+	    
+		  
+    </TableRow>
+</TableLayout>
+
+<TextView
+    android:id="@+id/DistThreshLabel"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:fillViewport="true">
+    android:layout_margin="5dip"
+    android:text="Distance Threshold (in):" />
 
-</ListView>
+<LinearLayout
+    android:id="@+id/linearLayout4"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:focusable="true" 
+    android:focusableInTouchMode="true" >
+
+    <EditText
+        android:id="@+id/distThresh"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_weight="0.15"
+        android:gravity="center_horizontal|left"
+        android:inputType="number"
+        android:singleLine="true" >
+
+    </EditText>
+
+    <Button
+        android:id="@+id/setDistThresholdButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|top"
+        android:layout_marginTop="5dip"
+        android:layout_weight="0.04"
+        android:text="Set Distance Threshold" />
+
+</LinearLayout>
+
+    <TextView
+        android:id="@+id/voiceresults"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="5dip"
+        android:text="Voice Results:" />
+    
+    <ListView
+        android:id="@+id/ListView01"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:fillViewport="true" >
+
+    </ListView>
+
+    <TextView
+        android:id="@+id/logger"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="5dip"
+        android:layout_weight="0.00"
+        android:text="Log:" />
+        
+    <ScrollView
+        android:id="@+id/ScrollView01"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_weight="0.04"
+        android:fillViewport="true" >
+
+        <TextView
+            android:id="@+id/textView1"
+            android:layout_width="wrap_content"
+            android:layout_height="278dp"
+            android:layout_gravity="bottom" />
+    </ScrollView>
+
 
 </LinearLayout>
