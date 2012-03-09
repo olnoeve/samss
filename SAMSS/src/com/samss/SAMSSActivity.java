@@ -6,14 +6,29 @@ import ioio.lib.api.Uart;
 import ioio.lib.api.exception.ConnectionLostException;
 import ioio.lib.util.AbstractIOIOActivity;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.Timer;
+import java.util.TimerTask;
 
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -21,8 +36,11 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.location.Criteria;
+import android.location.Location;
 import android.location.LocationManager;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.net.sip.SipAudioCall;
 import android.net.sip.SipException;
 import android.net.sip.SipManager;
@@ -33,7 +51,9 @@ import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.TextToSpeech.OnUtteranceCompletedListener;
+import android.util.Log;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
@@ -52,6 +72,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	private Button rightSensorButton;
 	private Button leftSensorButton;
 	private Button setDistThreshButton;
+	private Button voipChatButton;
 	
 	private boolean left_buttonPrevState;
 	private boolean right_buttonPrevState;
@@ -61,13 +82,20 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	private boolean prevLean_right = false;
 	private boolean prevLean_left = false;
 	
+	private boolean declinedAlerts = false;
+	
 	private int distance_threshold_inches = 12;
+	
+	private int MILLISECONDS_MIN = 60000;
+	private final int AUDIOMSG_TYPE_LOCAL = 1;
+	private final int AUDIOMSG_TYPE_WEBSERVICE = 2;
+	
 	
 	private static final int VOICE_RECOGNITION_REQUEST_CODE = 1234;
 	private ListView mList;
 	private ArrayList<String> matches/*, match*/;
 
-	
+	private boolean voiceRecognizerBusy = false;
 	private SpeechRecognizer mSpeechRecognizer;
 	private Intent mRecognizerIntent;
 	    
@@ -86,6 +114,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	//sensor shit
 	private SensorManager sensorManager;
 	public float x, y, z;
+	public float heading, pitch, roll;
 	public float cx = 0, cy = 0, cz = 0;
 	
 	//calibrate method
@@ -127,6 +156,27 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		distThresh = (EditText) findViewById(R.id.distThresh);
 		distThresh.setText(Integer.toString(distance_threshold_inches));
 		setDistThreshButton = (Button) findViewById(R.id.setDistThresholdButton);
+		voipChatButton = (Button) findViewById(R.id.voipChatButton);
+		
+		voipChatButton.setOnClickListener(new Button.OnClickListener() {
+			public void onClick(View v) {
+				if(call == null || !call.isInCall()){
+
+					initiateCall();
+
+				}
+				else {
+					try {
+						call.endCall();
+					} catch (SipException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+				}
+		      }
+		  });
+		
 		
 		setDistThreshButton.setOnClickListener(new Button.OnClickListener() {
 			public void onClick(View v) {
@@ -150,10 +200,133 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		yCoor=(TextView)findViewById(R.id.ycoor); // create Y axis object
 		zCoor=(TextView)findViewById(R.id.zcoor); // create Z axis object
 		
-		sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE);
-		sensorManager.registerListener(this,
-				sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
-				SensorManager.SENSOR_DELAY_NORMAL);
+		sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+		sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
+		
+		
+		// Get the location manager
+		locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+		// Define the criteria how to select the location provider -> use
+		// default
+		//Criteria criteria = new Criteria();
+		//provider = locationManager.getProvider(LocationManager.GPS_PROVIDER);
+		final Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+		
+		Timer updateTimer = new Timer("gpsTimer");
+        updateTimer.scheduleAtFixedRate(new TimerTask(){
+        	public void run(){
+        		
+        		// send GPS coords to web service
+        		
+
+				String address = "http://192.168.1.2:3000";
+
+
+
+				if (location != null) {
+					//System.out.println("Provider " + provider + " has been selected.");
+					lat = (double) (location.getLatitude());
+					lng = (double) (location.getLongitude());
+
+					//tv1_.setText(tv1_.getText() +"\n lat: " + lat + "\n");
+					//tv1_.setText(tv1_.getText() +"\n lng: " + lng + "\n");
+				}
+				float heading = location.getBearing();
+				
+				JSONObject json = connect(address + "/" + heading + "/" + lat + "/" + lng);
+
+				try {
+					//Log.i("SAMSS/WebserviceResponse", json.toString(3));
+					log( json.toString(3) );
+					
+				} catch (JSONException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				//myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
+
+				JSONObject traffic = new JSONObject();
+				JSONObject weather = new JSONObject();
+				JSONArray weatherAlerts = new JSONArray();
+				JSONArray trafficIncidents = new JSONArray();
+				JSONArray trafficConstruction = new JSONArray();
+				try {
+					weather = json.getJSONObject("Weather");
+					traffic = json.getJSONObject("Traffic");
+					//Log.i("SAMSS/JSON", traffic.toString());
+					weatherAlerts = weather.getJSONArray("Alerts");
+					trafficIncidents = traffic.getJSONArray("incidents");
+					trafficConstruction = traffic.getJSONArray("construction");
+				} catch (JSONException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				}
+				ArrayList<String> msgs = new ArrayList<String>();
+						
+				msgs.add("Found " 
+							+ trafficIncidents.length() 
+							+ " traffic incidents and " 
+							+ weatherAlerts.length() 
+							+ " weather alerts. Do you want to hear them?");
+				
+				//	Add all traffic incident messages to list first
+				for(int i = 0; i < trafficIncidents.length(); i++){
+
+					
+					try {
+						msgs.add( trafficIncidents.getString(i) );
+					} catch (JSONException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+				}
+				//	Then add all weather messages
+				for(int j = 0; j < weatherAlerts.length(); j++){
+
+					
+					try {
+						msgs.add( weatherAlerts.getString(j) );
+					} catch (JSONException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+				}
+				
+				//	Finally, send the list of messages to sendBTAudio with AUDIOMSG_TYPE_WEBSERVICE
+				try {
+					Log.i("SAMSS/WebserviceResponse", json.toString(3));
+				} catch (JSONException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				String[] alerts = msgs.toArray(new String[msgs.size()]);
+				sendBTaudio(AUDIOMSG_TYPE_WEBSERVICE, alerts);
+        		
+        		
+ /*       		float[] m_rotationMatrix = null;
+        		float[] m_lastMagFields = null;
+        		float[] m_lastAccels = null;
+        		float[] m_orientation = null;
+        		
+        		if (SensorManager.getRotationMatrix(m_rotationMatrix, null, m_lastMagFields, m_lastAccels)) {
+					SensorManager.getOrientation(m_rotationMatrix, m_orientation);
+					
+					 1 radian = 57.2957795 degrees 
+					 [0] : yaw, rotation around z axis
+					* [1] : pitch, rotation around x axis
+					* [2] : roll, rotation around y axis 
+					float heading = m_orientation[0] * 57.2957795f;
+					//float pitch = m_orientation[1] * 57.2957795f;
+					//float roll = m_orientation[2] * 57.2957795f;
+				}*/
+        		
+        	}
+        },  MILLISECONDS_MIN * 10, MILLISECONDS_MIN * 10);
+		
+		
+		
 		amanager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 		
 		tts= new TextToSpeech(SAMSSActivity.this, new TextToSpeech.OnInitListener() {
@@ -171,7 +344,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		// match.add(0, "cancel");
 		 
 		 initializeManager();
-
+		 
 		 
 		 mSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this.getApplicationContext());
 	        
@@ -181,7 +354,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		 mRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE,"com.samss");
 	        
 	        
-		 mSpeechRecognizer.setRecognitionListener(mRecognitionListener);
+		 mSpeechRecognizer.setRecognitionListener(mCancelRecognitionListener);
 
 		 
 		
@@ -220,9 +393,16 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	            // forget to set up a listener to set things up once the call is established.
 	            @Override
 	            public void onCallEstablished(SipAudioCall call) {
-	            	//tv1_.setText(tv1_.getText() +"\n" + "onCallEstablished: " + "\n");
+	            	
+	            	amanager.setBluetoothScoOn(true);
+	                amanager.startBluetoothSco();
+	            	
+	            	int blahh = amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+	            	//amanager.setMode(AudioManager.MODE_IN_CALL);
+	            	log("onCallEstablished:");
+	            	
 	                call.startAudio();
-	                call.setSpeakerMode(true);
+	                //call.setSpeakerMode(false);
 	                call.toggleMute();
 	                //updateStatus(call);
 	            }
@@ -230,17 +410,23 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	            @Override
 	            public void onCallEnded(SipAudioCall call) {
 	                //updateStatus("Ready.");
-	            	//tv1_.setText(tv1_.getText() +"\n" + "onCallEnded: " + "\n");
+	            	log("onCallEnded: ");
+	            	amanager.stopBluetoothSco();
+	        		amanager.setBluetoothScoOn(false);
+	        		amanager.abandonAudioFocus(null);
 	            }
 	            @Override
 	            public void onError(SipAudioCall call, int errorCode, String errorMessage) {
 	                //updateStatus("Ready.");
-	            	//tv1_.setText(tv1_.getText() +"\n" + "onError: " + errorCode + "\n");
+	            	log("onError: " + errorCode + "\n");
+	            	amanager.stopBluetoothSco();
+	        		amanager.setBluetoothScoOn(false);
+	        		amanager.abandonAudioFocus(null);
 	            }
 	            @Override
 	            public void onCalling(SipAudioCall call) {
 	                //updateStatus("Ready.");
-	            	//tv1_.setText(tv1_.getText() +"\n" + "calling " + "\n");
+	            	log("calling " + "\n");
 	            }            
 	        };
 	
@@ -268,7 +454,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	    }
 	}	
 
-private RecognitionListener mRecognitionListener = new RecognitionListener() {
+	private RecognitionListener mCancelRecognitionListener = new RecognitionListener() {
         @Override
         public void onBufferReceived(byte[] buffer) {
                 // TODO Auto-generated method stub
@@ -308,12 +494,22 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 
                 log("got Results");
                 //tv1_.setText(tv1_.getText() +"\n" + "onResults: " + "\n");
-                //Toast.makeText(getBaseContext(), "got voice results!", Toast.LENGTH_SHORT);
+                Toast.makeText(getBaseContext(), "got voice results!", Toast.LENGTH_SHORT);
 
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if(!matches.contains("cancel")){
                 	
-                	Toast.makeText(getBaseContext(), "got cancel", Toast.LENGTH_SHORT);
+                	Toast.makeText(getBaseContext(), "did not get cancel", Toast.LENGTH_SHORT);
+                	
+                	
+                	try {
+	        	        Intent callIntent = new Intent(Intent.ACTION_CALL);
+	        	        callIntent.setData(Uri.parse("tel:6177748487"));
+	        	        startActivity(callIntent);
+	        	    } catch (ActivityNotFoundException e) {
+	        	    	log("Call failed with: " + e);
+	        	    }
+                	
                 
                 }
                 //lv1_.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_list_item_1, matches));
@@ -339,58 +535,158 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
         }
 	    
 	};
-	
-	
-	
-	
+	private RecognitionListener mYesNoRecognitionListener = new RecognitionListener() {
 
-	//
-//	tog1_ would be our pushbutton on the helmet to initiate voice chat
-//
-/*        tog1_ = (ToggleButton) findViewById(R.id.toggleButton1);
-        
-        tog1_.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-			
-			@Override
-			public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-				// TODO Auto-generated method stub
-				buttonView.setChecked(isChecked);
-				if(call == null){
-					
-					initiateCall();
-					
-				}
-				else {
-					try {
-						call.endCall();
-					} catch (SipException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-					
-				}
-			}
-			
-        });*/
-		 
-//
-//	DO THIS TO MAKE A PHONE CALL (if rider doesn't "cancel")
-//								 
-/*	       phoneButton_.setOnClickListener(new OnClickListener() {
-	           public void onClick(View v) {
-	               
-	        	    try {
-	        	        Intent callIntent = new Intent(Intent.ACTION_CALL);
-	        	        callIntent.setData(Uri.parse("tel:6177748487"));
-	        	        startActivity(callIntent);
-	        	    } catch (ActivityNotFoundException e) {
-	        	    	tv1_.setText(tv1_.getText() +"\n" + "Call failed" + e + "\n");
-	        	        //Log.e("helloandroid dialing example", "Call failed", e);
-	        	    }
-	        	   
-	           }
-	       }); */	
+		
+        @Override
+        public void onBufferReceived(byte[] buffer) {
+                // TODO Auto-generated method stub
+                //Log.d(TAG, "onBufferReceived");
+        }
+
+        @Override
+        public void onError(int error) {
+                // TODO Auto-generated method stub
+                log("onError: " + error);
+                //tv1_.setText(tv1_.getText() +"\n" + "onError: " + error + "\n");
+                //mSpeechRecognizer.startListening(mRecognizerIntent);
+        }
+
+        @Override
+        public void onEvent(int eventType, Bundle params) {
+                // TODO Auto-generated method stub
+                //Log.d(TAG, "onEvent");
+        		//tv1_.setText(tv1_.getText() +"\n" + "onEvent: " + eventType + "\n");
+        }
+
+        @Override
+        public void onPartialResults(Bundle partialResults) {
+                // TODO Auto-generated method stub
+                //Log.d(TAG, "onPartialResults");
+        }
+
+        @Override
+        public void onReadyForSpeech(Bundle params) {
+                // TODO Auto-generated method stub
+                log("onReadyForSpeech");
+        		//tv1_.setText(tv1_.getText() + "\n" + "Ready for speech! \n");
+        }
+
+        @Override
+        public void onResults(Bundle results) {
+        		voiceRecognizerBusy = false;
+                log("got Results");
+                //tv1_.setText(tv1_.getText() +"\n" + "onResults: " + "\n");
+                //Toast.makeText(getApplicationContext(), "got voice results!", Toast.LENGTH_SHORT);
+
+                ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if(!matches.contains("yes") && matches.contains("no")){
+                	declinedAlerts = true;
+                	//Toast.makeText(getApplicationContext(), "did not here yes/no", Toast.LENGTH_SHORT);
+                	
+                	
+                	
+                
+                }
+                else if(matches.contains("yes") && !matches.contains("no")){
+                	
+                	declinedAlerts = false;
+                	
+                }
+                mList.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_list_item_1, matches));
+                //mSpeechRecognizer.startListening(mRecognizerIntent);
+        }
+
+        @Override
+        public void onRmsChanged(float rmsdB) {
+                // TODO Auto-generated method stub
+                //Log.d(TAG, "onRmsChanged");
+        }
+
+        @Override
+        public void onBeginningOfSpeech() {
+                // TODO Auto-generated method stub
+                //Log.d(TAG, "onBeginningOfSpeech");
+        }
+
+        @Override
+        public void onEndOfSpeech() {
+                // TODO Auto-generated method stub
+                //Log.d(TAG, "onEndOfSpeech");
+        }
+	    
+	};	
+
 	
+	
+	
+	public static JSONObject connect(String url)
+	{
+
+		HttpClient httpclient = new DefaultHttpClient();
+
+		// Prepare a request object
+		HttpGet httpget = new HttpGet(url); 
+
+		// Execute the request
+		HttpResponse response;
+
+		JSONObject json = new JSONObject();
+
+		try {
+			response = httpclient.execute(httpget);
+
+			HttpEntity entity = response.getEntity();
+
+			if (entity != null) {
+
+				// A Simple JSON Response Read
+				InputStream instream = entity.getContent();
+				String result= convertStreamToString(instream);
+
+				json = new JSONObject(result);
+
+				instream.close();
+			}
+
+		} catch (ClientProtocolException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (JSONException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		return json;
+	}
+	/**
+	 *
+	 * @param is
+	 * @return String
+	 */
+	public static String convertStreamToString(InputStream is) {
+		BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+		StringBuilder sb = new StringBuilder();
+
+		String line = null;
+		try {
+			while ((line = reader.readLine()) != null) {
+				sb.append(line + "\n");
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			try {
+				is.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		return sb.toString();
+	}	
 	
 	
 	
@@ -528,13 +824,15 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 			//if x < -2 send BT audio warning
 			if(leaning_right && !prevLean_right && (inchvalueR < distance_threshold_inches)){
 				prevLean_right = leaning_right;
-				sendBTaudio("Right Blindspot Warning");
+				String[] msg = {"Right Blindspot Warning"};
+				sendBTaudio(AUDIOMSG_TYPE_LOCAL,msg);
 			}
 
 			//if x > 2 send BT audio warning
 			if(leaning_left && !prevLean_left && (inchvalueL < distance_threshold_inches)){
 				prevLean_left = leaning_left;
-				sendBTaudio("Left Blindspot Warning");
+				String[] msg = {"Left Blindspot Warning"};
+				sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
 			}
 
 			
@@ -552,7 +850,8 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
 			           if ( Temp2.matches("P+")){
 			        	   led_crash.write(true);
 			        	 
-			        	  sendBTaudio("Crash detected. Dialing 9 1 1. Say cancel for false alarm.");
+			        	String[] msg = {"Crash detected. Dialing 9 1 1. Say cancel for false alarm."};
+						sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
 
 			       		View v = findViewById(R.id.calibratebutton1);
 
@@ -584,6 +883,7 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
         
 		
 	}
+	
 	void setSensorButtonBackground(final Button button, final int drawable) {
 		runOnUiThread(new Runnable() { 
             @Override 
@@ -596,6 +896,7 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
         }); 
     	 
     } 
+
 	void log(final String logString) {
 		runOnUiThread(new Runnable() { 
             @Override 
@@ -605,17 +906,67 @@ private RecognitionListener mRecognitionListener = new RecognitionListener() {
         }); 
     	 
     }
-	void sendBTaudio(final String ttsString){
+	void sendBTaudio(final int type, final String[] ttsStrings){
+		
 		myHash = new HashMap<String, String>();
 		myHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "Text_Voice");
+		
 		amanager.setBluetoothScoOn(true);
         amanager.startBluetoothSco();
-        myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM,
-                String.valueOf(AudioManager.STREAM_VOICE_CALL));
-        amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+        
+        myHash.put( TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
+        
+        amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+        
+        
+        switch(type){
+        
+        // If message from bike unit, just speak ttsStrings[0];
+        case AUDIOMSG_TYPE_LOCAL:
+        	tts.speak(ttsStrings[0], TextToSpeech.QUEUE_FLUSH, myHash);
+        break;
+        
+        // If message is from web service response, ttsStrings[0] contains a prompt of the form:
+        //
+        //		"Found 3 traffic incidents and 1 weather alert. Do you want to hear them?"
+        //
+        // To which the rider can say "yes" or "no". If they say yes, loop through the rest of the
+        // ttsStrings. 
+        case AUDIOMSG_TYPE_WEBSERVICE:
+        	// Speak Prompt
+        	tts.speak(ttsStrings[0], TextToSpeech.QUEUE_FLUSH, myHash);
+        	
+        	// Listen for Yes/No
+        	while(tts.isSpeaking()){
+        		
+        	}
+        	
+        	tv1_.post(new Runnable(){ public void run(){ 
+        		voiceRecognizerBusy = true;
+        		mSpeechRecognizer.setRecognitionListener(mYesNoRecognitionListener);
+        		mSpeechRecognizer.startListening(mRecognizerIntent); 
+        		}
+        	});
+        	
+        	while(voiceRecognizerBusy){
+        		//	Delay here to make sure the recognizer has gotten a yes/no answer or timed out
+        	}
+        	
+        	if(!declinedAlerts){
+        		
+        		for(int i = 1 ; i < ttsStrings.length - 1; i++){
+        			tts.speak(ttsStrings[i], TextToSpeech.QUEUE_ADD, myHash);
+        		}
+        		
+        	}
+        	
+        break;        
+        
+        }
+        
+        
 	    //String warning = "Crash detected. Dialing 9 1 1. Say cancel for false alarm.";
-	    tts.speak(ttsString, TextToSpeech.QUEUE_FLUSH, myHash);
+	    
 	}
 	/**
 	 * A method to create our IOIO thread.
