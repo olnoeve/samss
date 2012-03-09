@@ -37,7 +37,9 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.location.Criteria;
+import android.location.GpsStatus;
 import android.location.Location;
+import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -62,7 +64,7 @@ import android.widget.Toast;
 
 
 
-public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventListener,  OnUtteranceCompletedListener{
+public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventListener,  OnUtteranceCompletedListener, LocationListener{
 	private TextView tv1_;
 	private TextView xCoor; // declare X axis object
 	private TextView yCoor; // declare Y axis object
@@ -83,6 +85,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	private boolean prevLean_left = false;
 	
 	private boolean declinedAlerts = false;
+	private boolean gpsLock = false;
 	
 	private int distance_threshold_inches = 12;
 	
@@ -104,6 +107,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	 private String provider;
 	    
 	 double lat,lng;
+	 float heading;
 
     public String sipAddress = "sip:9996183605@sip.tropo.com";
     
@@ -114,7 +118,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	//sensor shit
 	private SensorManager sensorManager;
 	public float x, y, z;
-	public float heading, pitch, roll;
+	//public float heading, pitch, roll;
 	public float cx = 0, cy = 0, cz = 0;
 	
 	//calibrate method
@@ -206,125 +210,130 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		
 		// Get the location manager
 		locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+		
+		
 		// Define the criteria how to select the location provider -> use
 		// default
 		Criteria criteria = new Criteria();
 		provider = locationManager.getBestProvider(criteria, false);
-		final Location location = locationManager.getLastKnownLocation(provider);
-		//final Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-		
+		//final Location location = locationManager.getLastKnownLocation(provider);
+		//final Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+		locationManager.requestLocationUpdates(provider, 0, 0, this);
 		Timer updateTimer = new Timer("gpsTimer");
         updateTimer.scheduleAtFixedRate(new TimerTask(){
         	public void run(){
-        		
-        		// send GPS coords to web service
-        		Log.i("SAMSS/WebserviceGPS", "got to GPSTimer");
-
-				String address = "http://olnoeve.no.de";
-
-
-
-				if (location != null) {
-					//System.out.println("Provider " + provider + " has been selected.");
-					lat = (double) (location.getLatitude());
-					lng = (double) (location.getLongitude());
-
-					//tv1_.setText(tv1_.getText() +"\n lat: " + lat + "\n");
-					//tv1_.setText(tv1_.getText() +"\n lng: " + lng + "\n");
-				}
-				float heading = location.getBearing();
-				
-				JSONObject json = connect(address + "/" + heading + "/" + lat + "/" + lng);
-
-				try {
-					//Log.i("SAMSS/WebserviceResponse", json.toString(3));
-					log( json.toString(3) );
+        		if(gpsLock){
+	        		// send GPS coords to web service
+	        		Log.i("SAMSS/WebserviceGPS", "got to GPSTimer");
+	
+					String address = "http://olnoeve.no.de";
+	
+	
+					float heading = 0;
 					
-				} catch (JSONException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				//myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
-
-				JSONObject traffic = new JSONObject();
-				JSONObject weather = new JSONObject();
-				JSONArray weatherAlerts = new JSONArray();
-				JSONArray trafficIncidents = new JSONArray();
-				JSONArray trafficConstruction = new JSONArray();
-				try {
-					weather = json.getJSONObject("Weather");
-					traffic = json.getJSONObject("Traffic");
-					//Log.i("SAMSS/JSON", traffic.toString());
-					weatherAlerts = weather.getJSONArray("Alerts");
-					trafficIncidents = traffic.getJSONArray("incidents");
-					trafficConstruction = traffic.getJSONArray("construction");
-				} catch (JSONException e1) {
-					// TODO Auto-generated catch block
-					e1.printStackTrace();
-				}
-				ArrayList<String> msgs = new ArrayList<String>();
+				/*	if (location != null) {
+						//System.out.println("Provider " + provider + " has been selected.");
+						lat = (double) (location.getLatitude());
+						lng = (double) (location.getLongitude());
+						heading = location.getBearing();
+						//tv1_.setText(tv1_.getText() +"\n lat: " + lat + "\n");
+						//tv1_.setText(tv1_.getText() +"\n lng: " + lng + "\n");
+					}*/
+					//float heading = location.getBearing();
+					
+					JSONObject json = connect(address + "/" + heading + "/" + lat + "/" + lng);
+	
+					try {
+						//Log.i("SAMSS/WebserviceResponse", json.toString(3));
+						log( json.toString(3) );
 						
-				msgs.add("Found " 
-							+ trafficIncidents.length() 
-							+ " traffic incidents and " 
-							+ weatherAlerts.length() 
-							+ " weather alerts. Do you want to hear them?");
-				
-				//	Add all traffic incident messages to list first
-				for(int i = 0; i < trafficIncidents.length(); i++){
-
-					
-					try {
-						msgs.add( trafficIncidents.getString(i) );
 					} catch (JSONException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
-
-				}
-				//	Then add all weather messages
-				for(int j = 0; j < weatherAlerts.length(); j++){
-
-					
+					//myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
+	
+					JSONObject traffic = new JSONObject();
+					JSONObject weather = new JSONObject();
+					JSONArray weatherAlerts = new JSONArray();
+					JSONArray trafficIncidents = new JSONArray();
+					JSONArray trafficConstruction = new JSONArray();
 					try {
-						msgs.add( weatherAlerts.getString(j) );
+						weather = json.getJSONObject("Weather");
+						traffic = json.getJSONObject("Traffic");
+						//Log.i("SAMSS/JSON", traffic.toString());
+						weatherAlerts = weather.getJSONArray("Alerts");
+						trafficIncidents = traffic.getJSONArray("incidents");
+						trafficConstruction = traffic.getJSONArray("construction");
+					} catch (JSONException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+					ArrayList<String> msgs = new ArrayList<String>();
+							
+					msgs.add("Found " 
+								+ trafficIncidents.length() 
+								+ " traffic incidents and " 
+								+ weatherAlerts.length() 
+								+ " weather alerts. Do you want to hear them?");
+					
+					//	Add all traffic incident messages to list first
+					for(int i = 0; i < trafficIncidents.length(); i++){
+	
+						
+						try {
+							msgs.add( trafficIncidents.getString(i) );
+						} catch (JSONException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+	
+					}
+					//	Then add all weather messages
+					for(int j = 0; j < weatherAlerts.length(); j++){
+	
+						
+						try {
+							msgs.add( weatherAlerts.getString(j) );
+						} catch (JSONException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+	
+					}
+					
+					//	Finally, send the list of messages to sendBTAudio with AUDIOMSG_TYPE_WEBSERVICE
+					try {
+						Log.i("SAMSS/WebserviceResponse", json.toString(3));
 					} catch (JSONException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
-
-				}
-				
-				//	Finally, send the list of messages to sendBTAudio with AUDIOMSG_TYPE_WEBSERVICE
-				try {
-					Log.i("SAMSS/WebserviceResponse", json.toString(3));
-				} catch (JSONException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				String[] alerts = msgs.toArray(new String[msgs.size()]);
-				sendBTaudio(AUDIOMSG_TYPE_WEBSERVICE, alerts);
-        		
-        		
- /*       		float[] m_rotationMatrix = null;
-        		float[] m_lastMagFields = null;
-        		float[] m_lastAccels = null;
-        		float[] m_orientation = null;
-        		
-        		if (SensorManager.getRotationMatrix(m_rotationMatrix, null, m_lastMagFields, m_lastAccels)) {
-					SensorManager.getOrientation(m_rotationMatrix, m_orientation);
-					
-					 1 radian = 57.2957795 degrees 
-					 [0] : yaw, rotation around z axis
-					* [1] : pitch, rotation around x axis
-					* [2] : roll, rotation around y axis 
-					float heading = m_orientation[0] * 57.2957795f;
-					//float pitch = m_orientation[1] * 57.2957795f;
-					//float roll = m_orientation[2] * 57.2957795f;
-				}*/
-        		
+					String[] alerts = msgs.toArray(new String[msgs.size()]);
+					sendBTaudio(AUDIOMSG_TYPE_WEBSERVICE, alerts);
+	        		
+	        		
+	 /*       		float[] m_rotationMatrix = null;
+	        		float[] m_lastMagFields = null;
+	        		float[] m_lastAccels = null;
+	        		float[] m_orientation = null;
+	        		
+	        		if (SensorManager.getRotationMatrix(m_rotationMatrix, null, m_lastMagFields, m_lastAccels)) {
+						SensorManager.getOrientation(m_rotationMatrix, m_orientation);
+						
+						 1 radian = 57.2957795 degrees 
+						 [0] : yaw, rotation around z axis
+						* [1] : pitch, rotation around x axis
+						* [2] : roll, rotation around y axis 
+						float heading = m_orientation[0] * 57.2957795f;
+						//float pitch = m_orientation[1] * 57.2957795f;
+						//float roll = m_orientation[2] * 57.2957795f;
+					}*/
+        		}
+        		else
+        			log("no gps lock");
         	}
-        },  MILLISECONDS_MIN * 1, MILLISECONDS_MIN * 5);
+        },  MILLISECONDS_MIN * 1, MILLISECONDS_MIN * 1);
 		
 		
 		
@@ -404,7 +413,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	            	
 	                call.startAudio();
 	                //call.setSpeakerMode(false);
-	                call.toggleMute();
+	                //call.toggleMute();
 	                //updateStatus(call);
 	            }
 	
@@ -1019,7 +1028,27 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	}
 	
 
+	public void onLocationChanged(Location location) {
+		Log.i("SAMSS/GPSlocationListener", "onLocationChanged");
+		//printLocation(location);
+		lat = (double) location.getLatitude();
+		lng = (double) location.getLongitude();
+		heading = location.getBearing();
+		
+		gpsLock = true;
+	}
 
+	public void onProviderDisabled(String provider) {
+		// let okProvider be bestProvider
+		// re-register for updates
+		//output.append("\n\nProvider Disabled: " + provider);
+	}
+
+	public void onProviderEnabled(String provider) {
+		// is provider better than bestProvider?
+		// is yes, bestProvider = provider
+		//output.append("\n\nProvider Enabled: " + provider);
+	}
 
 	@Override
 	public void onUtteranceCompleted(String arg0) {
@@ -1027,6 +1056,12 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		amanager.stopBluetoothSco();
 		amanager.setBluetoothScoOn(false);
 		amanager.abandonAudioFocus(null);
+	}
+
+	@Override
+	public void onStatusChanged(String arg0, int arg1, Bundle arg2) {
+		// TODO Auto-generated method stub
+		
 	}
 }
 
