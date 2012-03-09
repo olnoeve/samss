@@ -208,18 +208,19 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 		// Define the criteria how to select the location provider -> use
 		// default
-		//Criteria criteria = new Criteria();
-		//provider = locationManager.getProvider(LocationManager.GPS_PROVIDER);
-		final Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+		Criteria criteria = new Criteria();
+		provider = locationManager.getBestProvider(criteria, false);
+		final Location location = locationManager.getLastKnownLocation(provider);
+		//final Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
 		
 		Timer updateTimer = new Timer("gpsTimer");
         updateTimer.scheduleAtFixedRate(new TimerTask(){
         	public void run(){
         		
         		// send GPS coords to web service
-        		
+        		Log.i("SAMSS/WebserviceGPS", "got to GPSTimer");
 
-				String address = "http://192.168.1.2:3000";
+				String address = "http://olnoeve.no.de";
 
 
 
@@ -323,7 +324,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 				}*/
         		
         	}
-        },  MILLISECONDS_MIN * 10, MILLISECONDS_MIN * 10);
+        },  MILLISECONDS_MIN * 1, MILLISECONDS_MIN * 5);
 		
 		
 		
