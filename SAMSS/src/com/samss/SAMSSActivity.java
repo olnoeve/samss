@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.lang.Math;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
@@ -32,12 +33,7 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
 import android.location.Criteria;
-import android.location.GpsStatus;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -64,20 +60,19 @@ import android.widget.Toast;
 
 
 
-public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventListener,  OnUtteranceCompletedListener, LocationListener{
+@SuppressWarnings("deprecation")
+public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceCompletedListener, LocationListener{
 	private TextView tv1_;
-	private TextView xCoor; // declare X axis object
-	private TextView yCoor; // declare Y axis object
-	private TextView zCoor; // declare Z axis object
+	private TextView roll_tv; // declare X axis object
+	private TextView pitch_tv; // declare Y axis object
+	//private TextView yaw; // declare Z axis object
 	private EditText distThresh;
 	
 	private Button rightSensorButton;
 	private Button leftSensorButton;
 	private Button setDistThreshButton;
 	private Button voipChatButton;
-	
-	private boolean left_buttonPrevState;
-	private boolean right_buttonPrevState;
+
 	private boolean prev_leftVal, prev_rightVal;
 	private boolean leaning_right = true;
 	private boolean leaning_left = true;
@@ -93,10 +88,14 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	private final int AUDIOMSG_TYPE_LOCAL = 1;
 	private final int AUDIOMSG_TYPE_WEBSERVICE = 2;
 	
+	//bike unit accel constants
+	private Float ZEROGx = (float) 1500; // mV 
+	private Float ZEROGy = (float) 1500; // mV 
+	private Float ZEROGz = (float) 1500; // mV 
+	private final int SENSITIVITY = 300; // mV/g
+	private Float accelX_voltage, accelY_voltage, accelZ_voltage;
 	
-	private static final int VOICE_RECOGNITION_REQUEST_CODE = 1234;
 	private ListView mList;
-	private ArrayList<String> matches/*, match*/;
 
 	private boolean voiceRecognizerBusy = false;
 	private SpeechRecognizer mSpeechRecognizer;
@@ -114,18 +113,12 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
     public SipManager manager = null;
     public SipAudioCall call = null;
     public SipProfile me = null;
-	 
-	//sensor shit
-	private SensorManager sensorManager;
-	public float x, y, z;
-	//public float heading, pitch, roll;
-	public float cx = 0, cy = 0, cz = 0;
 	
 	//calibrate method
 	public void onCalibrateButtonClick(View view){
-  		cx=-x;
-  		cy=-y;
-  		cz=-z;
+		ZEROGx = accelX_voltage; // mV 
+		ZEROGy = accelY_voltage; // mV 
+		ZEROGz = accelZ_voltage; // mV 
   	};
 	
 	private TextToSpeech tts; //made private
@@ -200,13 +193,10 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	    me = builder.build();
 		
 		//sensor shit 
-    	xCoor=(TextView)findViewById(R.id.xcoor); // create X axis object
-		yCoor=(TextView)findViewById(R.id.ycoor); // create Y axis object
-		zCoor=(TextView)findViewById(R.id.zcoor); // create Z axis object
+    	roll_tv=(TextView)findViewById(R.id.xcoor); // create X axis object
+		pitch_tv=(TextView)findViewById(R.id.ycoor); // create Y axis object
 		
-		sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-		sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
-		
+
 		
 		// Get the location manager
 		locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
@@ -218,122 +208,8 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		provider = locationManager.getBestProvider(criteria, false);
 		//final Location location = locationManager.getLastKnownLocation(provider);
 		//final Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-		locationManager.requestLocationUpdates(provider, 0, 0, this);
-		Timer updateTimer = new Timer("gpsTimer");
-        updateTimer.scheduleAtFixedRate(new TimerTask(){
-        	public void run(){
-        		if(gpsLock){
-	        		// send GPS coords to web service
-	        		Log.i("SAMSS/WebserviceGPS", "got to GPSTimer");
-	
-					String address = "http://olnoeve.no.de";
-	
-	
-					float heading = 0;
-					
-				/*	if (location != null) {
-						//System.out.println("Provider " + provider + " has been selected.");
-						lat = (double) (location.getLatitude());
-						lng = (double) (location.getLongitude());
-						heading = location.getBearing();
-						//tv1_.setText(tv1_.getText() +"\n lat: " + lat + "\n");
-						//tv1_.setText(tv1_.getText() +"\n lng: " + lng + "\n");
-					}*/
-					//float heading = location.getBearing();
-					
-					JSONObject json = connect(address + "/" + heading + "/" + lat + "/" + lng);
-	
-					try {
-						//Log.i("SAMSS/WebserviceResponse", json.toString(3));
-						log( json.toString(3) );
-						
-					} catch (JSONException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-					//myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
-	
-					JSONObject traffic = new JSONObject();
-					JSONObject weather = new JSONObject();
-					JSONArray weatherAlerts = new JSONArray();
-					JSONArray trafficIncidents = new JSONArray();
-					JSONArray trafficConstruction = new JSONArray();
-					try {
-						weather = json.getJSONObject("Weather");
-						traffic = json.getJSONObject("Traffic");
-						//Log.i("SAMSS/JSON", traffic.toString());
-						weatherAlerts = weather.getJSONArray("Alerts");
-						trafficIncidents = traffic.getJSONArray("incidents");
-						trafficConstruction = traffic.getJSONArray("construction");
-					} catch (JSONException e1) {
-						// TODO Auto-generated catch block
-						e1.printStackTrace();
-					}
-					ArrayList<String> msgs = new ArrayList<String>();
-							
-					msgs.add("Found " 
-								+ trafficIncidents.length() 
-								+ " traffic incidents and " 
-								+ weatherAlerts.length() 
-								+ " weather alerts. Do you want to hear them?");
-					
-					//	Add all traffic incident messages to list first
-					for(int i = 0; i < trafficIncidents.length(); i++){
-	
-						
-						try {
-							msgs.add( trafficIncidents.getString(i) );
-						} catch (JSONException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
-						}
-	
-					}
-					//	Then add all weather messages
-					for(int j = 0; j < weatherAlerts.length(); j++){
-	
-						
-						try {
-							msgs.add( weatherAlerts.getString(j) );
-						} catch (JSONException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
-						}
-	
-					}
-					
-					//	Finally, send the list of messages to sendBTAudio with AUDIOMSG_TYPE_WEBSERVICE
-					try {
-						Log.i("SAMSS/WebserviceResponse", json.toString(3));
-					} catch (JSONException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-					String[] alerts = msgs.toArray(new String[msgs.size()]);
-					sendBTaudio(AUDIOMSG_TYPE_WEBSERVICE, alerts);
-	        		
-	        		
-	 /*       		float[] m_rotationMatrix = null;
-	        		float[] m_lastMagFields = null;
-	        		float[] m_lastAccels = null;
-	        		float[] m_orientation = null;
-	        		
-	        		if (SensorManager.getRotationMatrix(m_rotationMatrix, null, m_lastMagFields, m_lastAccels)) {
-						SensorManager.getOrientation(m_rotationMatrix, m_orientation);
-						
-						 1 radian = 57.2957795 degrees 
-						 [0] : yaw, rotation around z axis
-						* [1] : pitch, rotation around x axis
-						* [2] : roll, rotation around y axis 
-						float heading = m_orientation[0] * 57.2957795f;
-						//float pitch = m_orientation[1] * 57.2957795f;
-						//float roll = m_orientation[2] * 57.2957795f;
-					}*/
-        		}
-        		else
-        			log("no gps lock");
-        	}
-        },  MILLISECONDS_MIN * 1, MILLISECONDS_MIN * 1);
+		locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 10 , 0, this);
+
 		
 		
 		
@@ -407,8 +283,6 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 	            	amanager.setBluetoothScoOn(true);
 	                amanager.startBluetoothSco();
 	            	
-	            	int blahh = amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
-	            	//amanager.setMode(AudioManager.MODE_IN_CALL);
 	            	log("onCallEstablished:");
 	            	
 	                call.startAudio();
@@ -714,12 +588,14 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		//private DigitalInput left_buttonInput_;
 		//private DigitalInput right_buttonInput_;
 		private AnalogInput sensorValueL_input, sensorValueR_input;
-		private Float sensorvalueL, inchvalueL, footvalueL, sensorvalueR, inchvalueR, footvalueR;
+		//bike analog inputs
+		private AnalogInput accelX, accelY, accelZ;
 		
-		private Uart uart_;
-		private InputStream xbeeIn;
-		private OutputStream xbeeOut;
+		private Float sensorvalueL, inchvalueL, sensorvalueR, inchvalueR;
 		
+		private double roll, pitch;
+		
+
 		private int bufferSize = 100;
 		
 
@@ -736,25 +612,28 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		@Override
 		protected void setup() throws ConnectionLostException {
 			
-			log("Connection to XBee establised.");
+			//log("Connection to XBee establised.");
 			
 			led_crash = ioio_.openDigitalOutput(3, false);
 			led_left = ioio_.openDigitalOutput(2, false);
 			led_right = ioio_.openDigitalOutput(1, false);
 
-			sensorValueR_input = ioio_.openAnalogInput(40); //bar 5
-			sensorValueL_input = ioio_.openAnalogInput(41); //bar 6
+			sensorValueR_input = ioio_.openAnalogInput(40); 
+			sensorValueL_input = ioio_.openAnalogInput(41); 
+			accelX = ioio_.openAnalogInput(36);
+			accelY = ioio_.openAnalogInput(37);
+			accelZ = ioio_.openAnalogInput(38);
 			
-			log("Connecting IOIO UART to XBee...");
+			//log("Connecting IOIO UART to XBee...");
 			
-			uart_ = ioio_.openUart(4, 5, 57600, Uart.Parity.NONE, Uart.StopBits.ONE); //blue is 4, green is 5
+			//uart_ = ioio_.openUart(4, 5, 57600, Uart.Parity.NONE, Uart.StopBits.ONE); //blue is 4, green is 5
 			
-			if(uart_ != null) log("Success.");
+			//if(uart_ != null) log("Success.");
 			
 			log("Listening to sensors...");
 			
-			xbeeIn = uart_.getInputStream();
-			xbeeOut = uart_.getOutputStream();
+			//xbeeIn = uart_.getInputStream();
+			//xbeeOut = uart_.getOutputStream();
 			
 		}
 
@@ -768,64 +647,84 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		 */
 		@Override
 		protected void loop() throws ConnectionLostException {
-			boolean left_buttonVal = false;
-			boolean right_buttonVal = false;
 			
+			//read analog inputs
 			try {
-				//left_buttonVal = left_buttonInput_.read();
-				//right_buttonVal = right_buttonInput_.read();
+				//blindspots sensors
+				//left
 				sensorvalueL = sensorValueL_input.getVoltage() *1000; 		   //get analog sensor value from pin 40 in mV
 				inchvalueL = sensorvalueL / (6.45f);   //convert to inches
-				//log(inchvalueL.toString());
+				//right
 				sensorvalueR = sensorValueR_input.getVoltage() *1000; 		   //get analog sensor value from pin 41 in mV
 				inchvalueR = sensorvalueR / (6.45f); 	//convert to inches
+				
 				
 			} catch (InterruptedException e1) {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
 			}
 
-			
+			//read analog inputs
 			try {
-				if((inchvalueL < distance_threshold_inches) && !prev_leftVal){
-							led_left.write(true);
-							xbeeOut.write(72);
-							setSensorButtonBackground(leftSensorButton, R.drawable.redbutton);
-							//log("Transmitted Left: H");
-							prev_leftVal = true;
-				} 
-				else if(!(inchvalueL < distance_threshold_inches) && prev_leftVal){
-					led_left.write(false);
-					xbeeOut.write(76);
-					setSensorButtonBackground(leftSensorButton, R.drawable.blackbutton);
-					//log("Transmitted Left: L"); 
-					prev_leftVal = false;	
+				
+				//roll accelerometer
+				accelX_voltage = accelX.getVoltage() * 1000; //convert to mV
+				accelY_voltage = accelY.getVoltage() * 1000;
+				accelZ_voltage = accelZ.getVoltage() * 1000;
+				
+				pitch = convertToPitch(accelX_voltage, accelY_voltage, accelZ_voltage);
+				roll = convertToRoll(accelY_voltage, accelZ_voltage); //get roll in degrees
+				
+				/*if ( (x+cx) < -2 )
+					leaning_right=true;	
+				else if ( (x+cx) > -2 ){ //made else if
+					leaning_right=false;
+					prevLean_right=false;
 				}
-			}
-			catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+				
+				if ( (x+cx) > 2 )
+					leaning_left=true;	
+				else if ( (x+cx) < 2 ){ //made else if
+					leaning_left=false;
+					prevLean_left=false;
+				}*/
+
+				
+				//updateRoll_nd_Pitch(roll, pitch);
+				
+			} catch (InterruptedException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
 			}
 			
-			try {
-				if((inchvalueR < distance_threshold_inches) && !prev_rightVal){
-							led_right.write(true);
-							xbeeOut.write(74);
-							setSensorButtonBackground(rightSensorButton, R.drawable.bluebutton);
-							//log("Transmitted Right: H (J)"); 
-							prev_rightVal = true;
-				} 
-				else if(!(inchvalueR < distance_threshold_inches) && prev_rightVal){
-					led_right.write(false);
-					xbeeOut.write(75);
-					setSensorButtonBackground(rightSensorButton, R.drawable.blackbutton);
-					//log("Transmitted Right: L (K)"); 
-					prev_rightVal = false;	
-				}
+			if((inchvalueL < distance_threshold_inches) && !prev_leftVal){
+						led_left.write(true);
+						//xbeeOut.write(72);
+						setSensorButtonBackground(leftSensorButton, R.drawable.redbutton);
+						//log("Transmitted Left: H");
+						prev_leftVal = true;
+			} 
+			else if(!(inchvalueL < distance_threshold_inches) && prev_leftVal){
+				led_left.write(false);
+				//xbeeOut.write(76);
+				setSensorButtonBackground(leftSensorButton, R.drawable.blackbutton);
+				//log("Transmitted Left: L"); 
+				prev_leftVal = false;	
 			}
-			catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+			
+			if((inchvalueR < distance_threshold_inches) && !prev_rightVal){
+						led_right.write(true);
+						//xbeeOut.write(74);
+						setSensorButtonBackground(rightSensorButton, R.drawable.bluebutton);
+						//log("Transmitted Right: H (J)"); 
+						prev_rightVal = true;
+			} 
+			else if(!(inchvalueR < distance_threshold_inches) && prev_rightVal){
+				led_right.write(false);
+				//xbeeOut.write(75);
+				setSensorButtonBackground(rightSensorButton, R.drawable.blackbutton);
+				//log("Transmitted Right: L (K)"); 
+				prev_rightVal = false;	
 			}
 			
 			
@@ -846,7 +745,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 			}
 
 			
-            try { 
+ /*           try { 
             	int availableBytes =xbeeIn.available(); 
             	 
 			    if (availableBytes > 0) { 
@@ -887,11 +786,41 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 			    // TODO Auto-generated catch block 
 			    log("Error: " +e ); 
 			    e.printStackTrace(); 
-            } 
+            } */
 		}
 		
         
 		
+	}
+	double convertToPitch(float x, float y, float z){
+		double pitch;
+		x = x - ZEROGy;
+		x = x / SENSITIVITY;
+		
+		y = y - ZEROGy;
+		y = y / SENSITIVITY;
+		
+		z = z - ZEROGz;
+		z = z / SENSITIVITY;
+		
+		pitch = Math.atan (x / Math.sqrt((y*y) + (z*z)));
+		pitch = (pitch * 180) / Math.PI; 
+		
+		return pitch;
+	}
+	
+	double convertToRoll (float y, float z){
+		double roll; //degrees
+		y = y - ZEROGy;
+		y = y / SENSITIVITY;
+		
+		z = z - ZEROGz;
+		z = z / SENSITIVITY;
+		
+		roll = Math.atan (y / Math.sqrt((z*z) + (z*z)));
+		roll = (roll * 180) / Math.PI;
+				
+		return roll;
 	}
 	
 	void setSensorButtonBackground(final Button button, final int drawable) {
@@ -912,6 +841,16 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
             @Override 
             public void run() { 
             	tv1_.setText(tv1_.getText() + logString + "\n");
+            } 
+        }); 
+    	 
+    }
+	void updateRoll_nd_Pitch(final double roll, final double pitch) {
+		runOnUiThread(new Runnable() { 
+            @Override 
+            public void run() { 
+            	roll_tv.setText("Roll: "+pitch);
+				pitch_tv.setText("Pitch: "+roll);;
             } 
         }); 
     	 
@@ -988,44 +927,8 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		return new IOIOThread();
 	}
 
-	@Override
-	public void onAccuracyChanged(Sensor arg0, int arg1) {
-		// TODO Auto-generated method stub
-		
-	}
 	
 	
-	
-	@Override
-	public void onSensorChanged(SensorEvent event) {
-		// TODO Auto-generated method stub
-		if(event.sensor.getType()==Sensor.TYPE_ACCELEROMETER){
-
-			// assign directions
-			x=event.values[0];
-			y=event.values[1];
-			z=event.values[2];
-			
-			if ( (x+cx) < -2 )
-				leaning_right=true;	
-			else if ( (x+cx) > -2 ){ //made else if
-				leaning_right=false;
-				prevLean_right=false;
-			}
-			
-			if ( (x+cx) > 2 )
-				leaning_left=true;	
-			else if ( (x+cx) < 2 ){ //made else if
-				leaning_left=false;
-				prevLean_left=false;
-			}
-
-			xCoor.setText("X: "+(x+cx));
-			yCoor.setText("Y: "+(y+cy));
-			zCoor.setText("Z: "+(z+cz));
-		}
-		
-	}
 	
 
 	public void onLocationChanged(Location location) {
@@ -1034,8 +937,92 @@ public class SAMSSActivity extends AbstractIOIOActivity implements SensorEventLi
 		lat = (double) location.getLatitude();
 		lng = (double) location.getLongitude();
 		heading = location.getBearing();
-		
 		gpsLock = true;
+		
+		if(gpsLock){
+    		// send GPS cords to web service
+    		Log.i("SAMSS/WebserviceGPS", "got to GPSTimer");
+
+			String address = "http://olnoeve.no.de";
+
+
+			JSONObject json = connect(address + "/" + heading + "/" + lat + "/" + lng);
+
+			try {
+				//Log.i("SAMSS/WebserviceResponse", json.toString(3));
+				log( json.toString(3) );
+				
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			//myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
+
+			JSONObject traffic = new JSONObject();
+			JSONObject weather = new JSONObject();
+			JSONArray weatherAlerts = new JSONArray();
+			JSONArray trafficIncidents = new JSONArray();
+			JSONArray trafficConstruction = new JSONArray();
+			try {
+				weather = json.getJSONObject("Weather");
+				traffic = json.getJSONObject("Traffic");
+				//Log.i("SAMSS/JSON", traffic.toString());
+				weatherAlerts = weather.getJSONArray("Alerts");
+				trafficIncidents = traffic.getJSONArray("incidents");
+				trafficConstruction = traffic.getJSONArray("construction");
+			} catch (JSONException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
+			ArrayList<String> msgs = new ArrayList<String>();
+					
+			msgs.add("Found " 
+						+ trafficIncidents.length() 
+						+ " traffic incidents and " 
+						+ weatherAlerts.length() 
+						+ " weather alerts. Do you want to hear them?");
+			
+			//	Add all traffic incident messages to list first
+			for(int i = 0; i < trafficIncidents.length(); i++){
+
+				
+				try {
+					msgs.add( trafficIncidents.getString(i) );
+				} catch (JSONException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
+			}
+			//	Then add all weather messages
+			for(int j = 0; j < weatherAlerts.length(); j++){
+
+				
+				try {
+					msgs.add( weatherAlerts.getString(j) );
+				} catch (JSONException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
+			}
+			
+			//	Finally, send the list of messages to sendBTAudio with AUDIOMSG_TYPE_WEBSERVICE
+			try {
+				Log.i("SAMSS/WebserviceResponse", json.toString(3));
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			String[] alerts = msgs.toArray(new String[msgs.size()]);
+			sendBTaudio(AUDIOMSG_TYPE_WEBSERVICE, alerts);
+    		
+		}
+		else
+			log("no gps lock");
+		
+		
+		
 	}
 
 	public void onProviderDisabled(String provider) {
