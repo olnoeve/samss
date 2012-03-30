@@ -2,6 +2,9 @@ package com.samss;
 
 import ioio.lib.api.AnalogInput;
 import ioio.lib.api.DigitalOutput;
+import ioio.lib.api.PulseInput;
+import ioio.lib.api.PulseInput.PulseMode;
+import ioio.lib.api.PwmOutput;
 import ioio.lib.api.Uart;
 import ioio.lib.api.exception.ConnectionLostException;
 import ioio.lib.util.AbstractIOIOActivity;
@@ -13,6 +16,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Timer;
@@ -93,7 +97,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	private Float ZEROGy = (float) 1500; // mV 
 	private Float ZEROGz = (float) 1500; // mV 
 	private final int SENSITIVITY = 300; // mV/g
-	private Float accelX_voltage, accelY_voltage, accelZ_voltage;
+	private Float accelX_voltage, accelY_voltage, accelZ_voltage, gyroX_voltage, gyroY_voltage;
 	
 	private ListView mList;
 
@@ -584,16 +588,23 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	 */
 	class IOIOThread extends AbstractIOIOActivity.IOIOThread {
 		/** The on-board LED. */
-		private DigitalOutput led_crash, led_left, led_right;
+		private DigitalOutput led_crash, led_left, led_right, helmet_enable_L, helmet_enable_R;
 		//private DigitalInput left_buttonInput_;
 		//private DigitalInput right_buttonInput_;
 		private AnalogInput sensorValueL_input, sensorValueR_input;
 		//bike analog inputs
-		private AnalogInput accelX, accelY, accelZ;
+		private AnalogInput accelX, accelY, accelZ, gyroX, gyroY;
+		private PwmOutput led_left_helmet, led_right_helmet;
+		
+		private PulseInput crash_x, crash_y;
+		
+		
+		ArrayList<Float> sensorMedian_L = new ArrayList<Float>();
+		ArrayList<Float> sensorMedian_R = new ArrayList<Float>();
 		
 		private Float sensorvalueL, inchvalueL, sensorvalueR, inchvalueR;
 		
-		private double roll, pitch;
+		private double roll, pitch, debug_count = 0;
 		
 
 		private int bufferSize = 100;
@@ -613,16 +624,31 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		protected void setup() throws ConnectionLostException {
 			
 			//log("Connection to XBee establised.");
+			led_left_helmet = ioio_.openPwmOutput(12, 1000);
+			led_right_helmet = ioio_.openPwmOutput(13, 1000);
+			led_left_helmet.setDutyCycle(0);
+			led_right_helmet.setDutyCycle(0);
+			
 			
 			led_crash = ioio_.openDigitalOutput(3, false);
 			led_left = ioio_.openDigitalOutput(2, false);
 			led_right = ioio_.openDigitalOutput(1, false);
+			//helmet_enable_L = ioio_.openDigitalOutput(6, true);
+			//helmet_enable_R = ioio_.openDigitalOutput(6, DigitalOutput.Spec.Mode.OPEN_DRAIN, false);
+
 
 			sensorValueR_input = ioio_.openAnalogInput(40); 
 			sensorValueL_input = ioio_.openAnalogInput(41); 
-			accelX = ioio_.openAnalogInput(36);
-			accelY = ioio_.openAnalogInput(37);
-			accelZ = ioio_.openAnalogInput(38);
+			accelX = ioio_.openAnalogInput(37);
+			accelY = ioio_.openAnalogInput(36);
+			accelZ = ioio_.openAnalogInput(35);
+			gyroX = ioio_.openAnalogInput(38);
+			gyroY = ioio_.openAnalogInput(39);
+			
+			//crash_x = ioio_.openPulseInput(10, PulseMode.FREQ);
+			//crash_y = ioio_.openPulseInput(11, PulseMode.FREQ);
+			
+			
 			
 			//log("Connecting IOIO UART to XBee...");
 			
@@ -652,12 +678,24 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			try {
 				//blindspots sensors
 				//left
-				sensorvalueL = sensorValueL_input.getVoltage() *1000; 		   //get analog sensor value from pin 40 in mV
+				/*while (sensorMedian_L.size() <= 16){
+				sensorMedian_L.add(sensorValueL_input.getVoltage() *1000);
+				}
+				sensorvalueL = Median(sensorMedian_L);
 				inchvalueL = sensorvalueL / (6.45f);   //convert to inches
+				sensorMedian_L.remove(0);
 				//right
-				sensorvalueR = sensorValueR_input.getVoltage() *1000; 		   //get analog sensor value from pin 41 in mV
+				while (sensorMedian_R.size() < 16){
+				sensorMedian_R.add(sensorValueL_input.getVoltage() *1000);
+				}
+				sensorvalueR = Median(sensorMedian_R);
 				inchvalueR = sensorvalueR / (6.45f); 	//convert to inches
+				sensorMedian_R.remove(0);*/
 				
+				sensorvalueL = sensorValueL_input.getVoltage() *1000; 
+				inchvalueL = sensorvalueL / (6.45f);   //convert to inches
+				sensorvalueR = sensorValueR_input.getVoltage() *1000; 	
+				inchvalueR = sensorvalueR / (6.45f); 	//convert to inches
 				
 			} catch (InterruptedException e1) {
 				// TODO Auto-generated catch block
@@ -671,9 +709,14 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				accelX_voltage = accelX.getVoltage() * 1000; //convert to mV
 				accelY_voltage = accelY.getVoltage() * 1000;
 				accelZ_voltage = accelZ.getVoltage() * 1000;
+				gyroX_voltage = gyroX.getVoltage() * 1000;
+				gyroY_voltage = gyroY.getVoltage() * 1000;
 				
-				pitch = convertToPitch(accelX_voltage, accelY_voltage, accelZ_voltage);
-				roll = convertToRoll(accelY_voltage, accelZ_voltage); //get roll in degrees
+				//Log.d("SAMSS_voltage", gyroX_voltage.toString());
+				
+				
+				//pitch = convertToPitch(accelX_voltage, accelY_voltage, accelZ_voltage);
+				//roll = convertToRoll(accelY_voltage, accelZ_voltage); //get roll in degrees
 				
 				/*if ( (x+cx) < -2 )
 					leaning_right=true;	
@@ -700,6 +743,10 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			if((inchvalueL < distance_threshold_inches) && !prev_leftVal){
 						led_left.write(true);
 						//xbeeOut.write(72);
+						//write to analog pin instead of writing xbee
+						//helmet_enable_L.write(false);
+						led_left_helmet.setDutyCycle(1);
+						
 						setSensorButtonBackground(leftSensorButton, R.drawable.redbutton);
 						//log("Transmitted Left: H");
 						prev_leftVal = true;
@@ -707,6 +754,10 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			else if(!(inchvalueL < distance_threshold_inches) && prev_leftVal){
 				led_left.write(false);
 				//xbeeOut.write(76);
+				//write to analog pin instead of writing xbee
+				led_left_helmet.setDutyCycle(0);
+				//helmet_enable_L.write(true);
+				
 				setSensorButtonBackground(leftSensorButton, R.drawable.blackbutton);
 				//log("Transmitted Left: L"); 
 				prev_leftVal = false;	
@@ -715,6 +766,9 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			if((inchvalueR < distance_threshold_inches) && !prev_rightVal){
 						led_right.write(true);
 						//xbeeOut.write(74);
+						//write to analog pin instead of writing xbee
+						led_right_helmet.setDutyCycle(1);
+						
 						setSensorButtonBackground(rightSensorButton, R.drawable.bluebutton);
 						//log("Transmitted Right: H (J)"); 
 						prev_rightVal = true;
@@ -722,6 +776,9 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			else if(!(inchvalueR < distance_threshold_inches) && prev_rightVal){
 				led_right.write(false);
 				//xbeeOut.write(75);
+				//write to analog pin instead of writing xbee
+				led_right_helmet.setDutyCycle(0);
+				
 				setSensorButtonBackground(rightSensorButton, R.drawable.blackbutton);
 				//log("Transmitted Right: L (K)"); 
 				prev_rightVal = false;	
@@ -745,7 +802,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			}
 
 			
- /*           try { 
+ /*         try { 
             	int availableBytes =xbeeIn.available(); 
             	 
 			    if (availableBytes > 0) { 
@@ -792,6 +849,22 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
         
 		
 	}
+	
+	public static Float Median(ArrayList values)
+	{
+	    Collections.sort(values);
+	 
+	    if (values.size() % 2 == 1)
+		return (Float) values.get((values.size()+1)/2-1);
+	    else
+	    {
+		Float lower = (Float) values.get(values.size()/2-1);
+		Float upper = (Float) values.get(values.size()/2);
+	 
+		return (lower + upper) / 2.0f;
+	    }	
+	}
+	
 	double convertToPitch(float x, float y, float z){
 		double pitch;
 		x = x - ZEROGy;
@@ -808,7 +881,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		
 		return pitch;
 	}
-	
+
 	double convertToRoll (float y, float z){
 		double roll; //degrees
 		y = y - ZEROGy;
@@ -845,6 +918,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
         }); 
     	 
     }
+	
 	void updateRoll_nd_Pitch(final double roll, final double pitch) {
 		runOnUiThread(new Runnable() { 
             @Override 
@@ -855,6 +929,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
         }); 
     	 
     }
+	
 	void sendBTaudio(final int type, final String[] ttsStrings){
 		
 		myHash = new HashMap<String, String>();
