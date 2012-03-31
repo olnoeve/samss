@@ -760,35 +760,24 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			try {
 				//blindspot sensors
 				//left
-				while (sensorMedian_L.size() <= 16){
-					
+				sensorMedian_L.clear();
+				for ( int i = 0; i <= 9; i++){
 					sensorMedian_L.add(sensorValueL_input.getVoltage() *1000);
-					
 				}
 				sensorvalueL = Median(sensorMedian_L);
-				
-				Log.d("SAMSS_median", "Before: " + sensorMedian_L.toArray().toString());
-				
+				Log.d("SAMSS_median_LEFT", sensorvalueL.toString());
 				inchvalueL = sensorvalueL / (6.45f);   //convert to inches
-				sensorMedian_L.remove(0);
-				
-				Log.d("SAMSS_median", "After: " + sensorMedian_L.toArray().toString());
 				
 				//right
-				while (sensorMedian_R.size() < 16){
-					
-					sensorMedian_R.add(sensorValueL_input.getVoltage() *1000);
-					
+				sensorMedian_R.clear();
+				for ( int i = 0; i <= 9; i++){
+					sensorMedian_R.add(sensorValueR_input.getVoltage() *1000);
 				}
 				sensorvalueR = Median(sensorMedian_R);
-				inchvalueR = sensorvalueR / (6.45f); 	//convert to inches
-				sensorMedian_R.remove(0);
+				Log.d("SAMSS_median_RIGHT", sensorvalueR.toString());
+				inchvalueR = sensorvalueR / (6.45f);   //convert to inches
 
-				/*sensorvalueL = sensorValueL_input.getVoltage() *1000; 
-				inchvalueL = sensorvalueL / (6.45f);   //convert to inches
-				sensorvalueR = sensorValueR_input.getVoltage() *1000; 	
-				inchvalueR = sensorvalueR / (6.45f); 	//convert to inches
-*/
+
 			} catch (InterruptedException e1) {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
@@ -942,7 +931,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 
 	}
 
-	public static Float Median(ArrayList values)
+	public static float Median(ArrayList values)
 	{
 	    Collections.sort(values);
 		
@@ -951,8 +940,8 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	    else
 	    {
 	    	
-	    	Float lower = (Float) values.get( (values.size()/2) - 1);
-	    	Float upper = (Float) values.get( values.size() / 2);
+	    	float lower = (Float) values.get( (values.size()/2) - 1);
+	    	float upper = (Float) values.get( values.size() / 2);
 
 	    	return (lower + upper) / 2.0f;
 	    }	
