@@ -111,6 +111,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	private final int ROLL_ACCEL_SENSITIVITY 	= 300; 	// mV/g
 	private final String SIP_ADDRESS 			= "sip:9996183605@sip.tropo.com";
 	private final float RAD_TO_DEG 				= (float) 57.295779513082320876798154814105;
+	private final int CRASH_THRESHOLD 			= 20000;
 	
 	//
 	//	END GLOBAL CONSTANTS
@@ -351,8 +352,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	            @Override
 	            public void onCallEstablished(SipAudioCall call) {
 	            	
-	            	amanager.setBluetoothScoOn(true);
-	                amanager.startBluetoothSco();
+	            	startBluetooth();
 	                voipEstablished =true;
 	            	log("onCallEstablished:");
 	            	
@@ -366,17 +366,14 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	            public void onCallEnded(SipAudioCall call) {
 	                //updateStatus("Ready.");
 	            	log("onCallEnded: ");
-	            	amanager.stopBluetoothSco();
-	        		amanager.setBluetoothScoOn(false);
-	        		amanager.abandonAudioFocus(null);
+	            	voipEstablished =true;
+	            	stopBluetooth();
 	            }
 	            @Override
 	            public void onError(SipAudioCall call, int errorCode, String errorMessage) {
 	                //updateStatus("Ready.");
 	            	log("onError: " + errorCode + "\n");
-	            	amanager.stopBluetoothSco();
-	        		amanager.setBluetoothScoOn(false);
-	        		amanager.abandonAudioFocus(null);
+	            	stopBluetooth();
 	            }
 	            @Override
 	            public void onCalling(SipAudioCall call) {
@@ -683,7 +680,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		
 		private PwmOutput led_left_helmet, led_right_helmet;
 
-		private PulseInput crash_x, crash_y;
+		private AnalogInput crash_x, crash_y;
 		
 		Float timer;
 		int dtime;
@@ -699,9 +696,9 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		private boolean prev_rightBlindspot = false;
 		private boolean calibrated = false;
 			
-		private Float roll, pitch;
+		private Float roll = 0f, pitch;
 		
-		private Float xDuration, yDuration, xRatio, yRatio;
+		private Float crash_Xvoltage, crash_Yvoltage;
 
 		private int bufferSize = 100;
 
@@ -744,6 +741,11 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 
 			//crash_x = ioio_.openPulseInput(10, PulseMode.FREQ);
 			//crash_y = ioio_.openPulseInput(11, PulseMode.FREQ);
+			
+			crash_x = ioio_.openAnalogInput(33);
+			crash_y = ioio_.openAnalogInput(34);
+			
+			
 
 			timer = (float) System.nanoTime();
 
@@ -778,8 +780,9 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				//blindspot sensors
 				//left
 				sensorMedian_L.clear();
-				for ( int i = 0; i <= 501; i++){
+				for ( int i = 0; i <= 11; i++){
 					sensorMedian_L.add(sensorValueL_input.getVoltage() *1000);
+					//Log.i("SAMSS_LEFT", sensorMedian_L.get(i).toString());
 				}
 				sensorvalueL = Median(sensorMedian_L);
 				//Log.d("SAMSS_median_LEFT", sensorvalueL.toString());
@@ -788,7 +791,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				
 				//right
 				sensorMedian_R.clear();
-				for ( int i = 0; i <= 501; i++){
+				for ( int i = 0; i <= 11; i++){
 					sensorMedian_R.add(sensorValueR_input.getVoltage() *1000);
 				}
 				sensorvalueR = Median(sensorMedian_R);
@@ -804,11 +807,6 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 
 			//read analog inputs
 			try {
-				
-				
-				for (int j = 0; j < 10000; j++){
-					
-				}
 				
 				//roll accelerometer
 				accelX_voltage = accelX.getVoltage() * 1000; //convert to mV
@@ -840,11 +838,19 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				
 				gyroXrate = (gyroX_voltage - gyroXZero) / gyroSENSITIVITY;
 				
+				
+				
 				dtime = (int) (System.nanoTime() - timer);
 				timer = (float) System.nanoTime();
-				roll = kalmanCalculateX(accelXangle, gyroXrate, dtime);
+				if (dtime == 0 ){
+					
+				}
+				else {
+				roll = kalmanCalculateX(accelXangle, gyroXrate, (dtime/1000000));
+				}
 				
-				Log.d("SAMSS_angle", roll.toString());
+				//Log.d("SAMSS_angle", roll.toString());
+				
 				//log(roll.toString());
 				//updateRoll_nd_Pitch(roll.toString());
 				
@@ -935,60 +941,32 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
 			}
 			
-			//start of crash detection shit
-			/*try {
-				xDuration = crash_x.getDuration();
-				xRatio = xDuration / .000064f;
-				Log.d("CRASH", xRatio.toString());
-				//xDuration = crash_x.getFrequency();
-				//Log.d("CRASH", xDuration.toString());
+			
+			try {
+				crash_Xvoltage = crash_x.getVoltage();
+				//crash_Yvoltage = crash_y.getVoltage() * 1000;
+				
+				Log.d("crashVoltage", crash_Xvoltage.toString());
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
+			}
+			/*
+			if (crash_Xvoltage > CRASH_THRESHOLD || crash_Yvoltage > CRASH_THRESHOLD){
+				
+				String[] msg = {"Crash detected. Dialing 9 1 1. Say cancel for false alarm."};
+				sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
+				
+				tv1_.post(new Runnable(){ public void run(){ 
+	        		voiceRecognizerBusy = true;
+	        		mSpeechRecognizer.setRecognitionListener(mCancelRecognitionListener);
+	        		mSpeechRecognizer.startListening(mRecognizerIntent); 
+	        		}
+	        	});
+				
 			}*/
 			
- /*         try { 
-            	int availableBytes =xbeeIn.available(); 
-            	 
-			    if (availableBytes > 0) { 
-			           log("available bytes " + Integer.toString(availableBytes));
-			           
-			           byte[] readBuffer = new byte[bufferSize]; 
-			           xbeeIn.read(readBuffer, 0, availableBytes); 
-			           char[] Temp = (new String(readBuffer, 0, availableBytes)).toCharArray(); 
-			           String Temp2 = new String(Temp); 
-			           			           
-			           if ( Temp2.matches("P+")){
-			        	   led_crash.write(true);
-			        	 
-			        	String[] msg = {"Crash detected. Dialing 9 1 1. Say cancel for false alarm."};
-						sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
-
-			       		View v = findViewById(R.id.calibratebutton1);
-
-			       		v.post(new Runnable(){ public void run(){ mSpeechRecognizer.startListening(mRecognizerIntent); }});
-			       	
-			       		   
-			               
-			        	   sleep(1000);
-			        	   led_crash.write(false);
-			        	   
-			           }
-			           else
-			        	   led_crash.write(false);
-			           
-			           log("Received: " + Temp2); 
-			    } 
-			    sleep(30); 
-            } 
-            catch (InterruptedException e) { 
-            	log("Error: " +e ); 
-            } 
-            catch (IOException e) { 
-			    // TODO Auto-generated catch block 
-			    log("Error: " +e ); 
-			    e.printStackTrace(); 
-            } */
+			
 		}
 
         
@@ -1047,37 +1025,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	    	return (lower + upper) / 2.0f;
 	    }	
 	}
-/*
-	double convertToPitch(float x, float y, float z){
-		double pitch;
-		x = x - ZEROGy;
-		x = x / SENSITIVITY;
 
-		y = y - ZEROGy;
-		y = y / SENSITIVITY;
-
-		z = z - ZEROGz;
-		z = z / SENSITIVITY;
-
-		pitch = Math.atan (x / Math.sqrt((y*y) + (z*z)));
-		pitch = (pitch * 180) / Math.PI; 
-
-		return pitch;
-	}
-
-	double convertToRoll (float y, float z){
-		double roll; //degrees
-		y = y - ZEROGy;
-		y = y / SENSITIVITY;
-
-		z = z - ZEROGz;
-		z = z / SENSITIVITY;
-
-		roll = Math.atan (y / Math.sqrt((z*z) + (z*z)));
-		roll = (roll * 180) / Math.PI;
-
-		return roll;
-	}*/
 
 	void setSensorButtonBackground(final Button button, final int drawable) {
 		runOnUiThread(new Runnable() { 
@@ -1116,15 +1064,11 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 
 		myHash = new HashMap<String, String>();
 		myHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "Text_Voice");
-
-		amanager.setBluetoothScoOn(true);
-        amanager.startBluetoothSco();
         
-        myHash.put( TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
-        
-        amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
-        
-        
+         myHash.put( TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
+         
+         startBluetooth();
+         
         switch(type){
         
         // If message from bike unit, just speak ttsStrings[0];
@@ -1293,15 +1237,25 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		// is yes, bestProvider = provider
 		//output.append("\n\nProvider Enabled: " + provider);
 	}
-
+	public void startBluetooth(){
+		if (!amanager.isBluetoothScoOn()){
+			amanager.setBluetoothScoOn(true);
+	        amanager.startBluetoothSco();
+	        amanager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+		}
+	}
+	
+	public void stopBluetooth(){
+		if (!voipEstablished || !tts.isSpeaking()){
+			amanager.stopBluetoothSco();
+			amanager.setBluetoothScoOn(false);
+			amanager.abandonAudioFocus(null);
+			}
+	}
 	@Override
 	public void onUtteranceCompleted(String arg0) {
 		// TODO Auto-generated method stub
-		if (!voipEstablished){
-		amanager.stopBluetoothSco();
-		amanager.setBluetoothScoOn(false);
-		amanager.abandonAudioFocus(null);
-		}
+		stopBluetooth();
 	}
 
 	@Override
