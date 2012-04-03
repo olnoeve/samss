@@ -37,6 +37,7 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.net.Uri;
 import android.net.sip.SipAudioCall;
 import android.net.sip.SipException;
@@ -111,7 +112,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	private final int ROLL_ACCEL_SENSITIVITY 	= 300; 	// mV/g
 	private final String SIP_ADDRESS 			= "sip:9996183605@sip.tropo.com";
 	private final float RAD_TO_DEG 				= (float) 57.295779513082320876798154814105;
-	private final int CRASH_THRESHOLD 			= 20000;
+	private final double CRASH_THRESHOLD 			= 1900;
 	
 	//
 	//	END GLOBAL CONSTANTS
@@ -141,7 +142,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	//
 	//	TTS alerts
 	//	
-	private boolean declinedAlerts = false;
+	private boolean declinedAlerts = true;
 	
 	private TextToSpeech tts; //made private
 	private HashMap<String, String> myHash; //made private 
@@ -156,7 +157,6 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	//
 	//	Bike Roll (Lean) Sensing (ADXL 335 Accelerometer)
 	//
-	private boolean prev_leftVal, prev_rightVal;
 	private boolean leaning_right 	= true;
 	private boolean leaning_left 	= true;
 	private boolean prevLean_right 	= false;
@@ -166,7 +166,6 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	private float ZEROGy = (float) 1500; // mV 
 	private float ZEROGz = (float) 1500; // mV 
 	private float gyroXZero = (float) 1500;
-	private float gyroYZero = (float) 1500;
 	
 	private final int accelSENSITIVITY = 300; // mV/g
 	private final int gyroSENSITIVITY = 2; // mV/ deg/sec
@@ -187,6 +186,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	
 	private SpeechRecognizer mSpeechRecognizer;
 	private Intent mRecognizerIntent;
+	private ToneGenerator mToneGenerator;
 	    
 	       
     public SipManager manager 		= null;
@@ -283,7 +283,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		//final Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
 		
 		
-		//locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 10 , 0, this);
+		locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 0 , 0, this);
 
 		
 		
@@ -313,7 +313,8 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		 mRecognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
 		 mRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
 		 mRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE,"com.samss");
-	        
+	     
+		 mToneGenerator = new ToneGenerator(AudioManager.STREAM_VOICE_CALL, ToneGenerator.MAX_VOLUME); 
 	        
 		 
 	}
@@ -515,7 +516,13 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
         @Override
         public void onError(int error) {
                 // TODO Auto-generated method stub
-                log("onError: " + error);
+        		if (error == 8){
+        			
+        		}
+        		else {
+        			log("onError: " + error);
+        		}
+                
                 //tv1_.setText(tv1_.getText() +"\n" + "onError: " + error + "\n");
                 //mSpeechRecognizer.startListening(mRecognizerIntent);
         }
@@ -537,6 +544,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
         public void onReadyForSpeech(Bundle params) {
                 // TODO Auto-generated method stub
                 log("onReadyForSpeech");
+                declinedAlerts = true;
         		//tv1_.setText(tv1_.getText() + "\n" + "Ready for speech! \n");
         }
 
@@ -668,41 +676,39 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	 */
 	class IOIOThread extends AbstractIOIOActivity.IOIOThread {
 		/** The on-board LED. */
-		private DigitalOutput led_crash, led_left, led_right, helmet_enable_L, helmet_enable_R;
+		private DigitalOutput led_crash, led_left, led_right;
 		//private DigitalInput left_buttonInput_;
 		//private DigitalInput right_buttonInput_;
 		private AnalogInput sensorValueL_input, sensorValueR_input;
 		//bike analog inputs
 		private AnalogInput accelX, accelY, accelZ, gyroX, gyroY;
 		
-		private Float gyroXrate, gyroYrate, gyroXangle;
-		private Float accelYval, accelXval, accelZval, accelXangle, accelYangle;
+		private Float gyroXrate;
+		private Float accelYval, accelXval, accelZval, accelXangle;
 		
 		private PwmOutput led_left_helmet, led_right_helmet;
 
 		private AnalogInput crash_x, crash_y;
 		
-		Float timer;
-		int dtime;
+		Float timer, left_dimmertimer = 0f, right_dimmertimer = 0f;
+		int dtime, left_ledtimeon = 0, right_ledtimeon = 0;
+		
+		boolean dimmertimerR = false, dimmertimerL = false;
+		
 
 
 		ArrayList<Float> sensorMedian_L = new ArrayList<Float>();
 		ArrayList<Float> sensorMedian_R = new ArrayList<Float>();
 
-		private Float sensorvalueL, inchvalueL, sensorvalueR, inchvalueR;
+		private Float sensorvalueL, sensorvalueR;
 		private boolean leftBlindspot 		= false;
 		private boolean prev_leftBlindspot 	= false; 
 		private boolean rightBlindspot	 	= false;
 		private boolean prev_rightBlindspot = false;
 		private boolean calibrated = false;
 			
-		private Float roll = 0f, pitch;
-		
+		private Float roll = 0f;
 		private Float crash_Xvoltage, crash_Yvoltage;
-
-		private int bufferSize = 100;
-
-
 
 		/**
 		 * Called every time a connection with IOIO has been established.
@@ -748,6 +754,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			
 
 			timer = (float) System.nanoTime();
+			//left_dimmertimer = (float) System.nanoTime();
 
 			//log("Connecting IOIO UART to XBee...");
 
@@ -821,7 +828,6 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 					ZEROGy = accelY_voltage; // mV 
 					ZEROGz = accelZ_voltage - 310; // mV 
 					gyroXZero = gyroX_voltage;
-					gyroYZero = gyroY_voltage;
 					log("IMU calibrated...");
 					calibrated = true;
 				}
@@ -879,14 +885,25 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
 			}
-
+			
+			if (dimmertimerL){
+				left_ledtimeon = (int) (System.nanoTime() - left_dimmertimer);
+			}
+			if (dimmertimerR){
+				right_ledtimeon = (int) (System.nanoTime() - right_dimmertimer);
+			}
+			
+			
+			
 			if(leftBlindspot && !prev_leftBlindspot){
 						led_left.write(true);
 						//xbeeOut.write(72);
 						//write to analog pin instead of writing xbee
 						//helmet_enable_L.write(false);
 						led_left_helmet.setDutyCycle(1);
-
+						left_dimmertimer = (float) System.nanoTime();
+						dimmertimerL = true;
+						
 						setSensorButtonBackground(leftSensorButton, R.drawable.redbutton);
 						//log("Transmitted Left: H");
 						prev_leftBlindspot = true;
@@ -897,10 +914,14 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				//write to analog pin instead of writing xbee
 				led_left_helmet.setDutyCycle(0);
 				//helmet_enable_L.write(true);
-
+				dimmertimerL = false;
+				
 				setSensorButtonBackground(leftSensorButton, R.drawable.blackbutton);
 				//log("Transmitted Left: L"); 
 				prev_leftBlindspot = false;	
+			}
+			else if(dimmertimerL && left_ledtimeon > 2000000000){
+				led_left_helmet.setDutyCycle(0.1f);
 			}
 
 			if(rightBlindspot && !prev_rightBlindspot){
@@ -908,7 +929,8 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 						//xbeeOut.write(74);
 						//write to analog pin instead of writing xbee
 						led_right_helmet.setDutyCycle(1);
-
+						right_dimmertimer = (float) System.nanoTime();
+						dimmertimerR = true;
 						setSensorButtonBackground(rightSensorButton, R.drawable.bluebutton);
 						//log("Transmitted Right: H (J)"); 
 						prev_rightBlindspot = true;
@@ -918,12 +940,15 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				//xbeeOut.write(75);
 				//write to analog pin instead of writing xbee
 				led_right_helmet.setDutyCycle(0);
-
+				dimmertimerR = false;
+				
 				setSensorButtonBackground(rightSensorButton, R.drawable.blackbutton);
 				//log("Transmitted Right: L (K)"); 
 				prev_rightBlindspot = false;	
 			}
-
+			else if(dimmertimerR && right_ledtimeon > 2000000000){
+				led_right_helmet.setDutyCycle(0.1f);
+			}
 
 
 
@@ -931,27 +956,37 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			if((leaning_right && !prevLean_right && rightBlindspot) ){
 				prevLean_right = leaning_right;
 				String[] msg = {"Right Blindspot Warning"};
-				sendBTaudio(AUDIOMSG_TYPE_LOCAL,msg);
+				//sendBTaudio(AUDIOMSG_TYPE_LOCAL,msg);
+				startBluetooth();
+				mToneGenerator.startTone(ToneGenerator.TONE_DTMF_9, 500);
 			}
 
 			//if x > 2 send BT audio warning
 			if((leaning_left && !prevLean_left && leftBlindspot )){
 				prevLean_left = leaning_left;
 				String[] msg = {"Left Blindspot Warning"};
-				sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
+				//sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
+				startBluetooth();
+				mToneGenerator.startTone(ToneGenerator.TONE_DTMF_9, 500);
 			}
 			
 			
 			try {
-				crash_Xvoltage = crash_x.getVoltage();
-				//crash_Yvoltage = crash_y.getVoltage() * 1000;
+				crash_Xvoltage = crash_x.getVoltage() * 1000;
+				crash_Yvoltage = crash_y.getVoltage() * 1000;
 				
-				Log.d("crashVoltage", crash_Xvoltage.toString());
+				if (crash_Xvoltage > 1700){
+					Log.d("crashVoltage", crash_Xvoltage.toString());
+				}
+				if (crash_Xvoltage > 1700){
+					Log.d("crashVoltage", crash_Xvoltage.toString());
+				}
+				
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			/*
+			
 			if (crash_Xvoltage > CRASH_THRESHOLD || crash_Yvoltage > CRASH_THRESHOLD){
 				
 				String[] msg = {"Crash detected. Dialing 9 1 1. Say cancel for false alarm."};
@@ -964,7 +999,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	        		}
 	        	});
 				
-			}*/
+			}
 			
 			
 		}
@@ -1176,7 +1211,6 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				e1.printStackTrace();
 			}
 			ArrayList<String> msgs = new ArrayList<String>();
-					
 			msgs.add("Found " 
 						+ trafficIncidents.length() 
 						+ " traffic incidents and " 
