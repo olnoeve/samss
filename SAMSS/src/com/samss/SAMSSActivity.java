@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
@@ -112,7 +113,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	private final int ROLL_ACCEL_SENSITIVITY 	= 300; 	// mV/g
 	private final String SIP_ADDRESS 			= "sip:9996183605@sip.tropo.com";
 	private final float RAD_TO_DEG 				= (float) 57.295779513082320876798154814105;
-	private final double CRASH_THRESHOLD 			= 1900;
+	private final float CRASH_THRESHOLD 		= 1.9f;
 	
 	//
 	//	END GLOBAL CONSTANTS
@@ -170,11 +171,11 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	private final int accelSENSITIVITY = 300; // mV/g
 	private final int gyroSENSITIVITY = 2; // mV/ deg/sec
 	
-	private Float accelX_voltage;
-	private Float accelY_voltage;
-	private Float accelZ_voltage;
-	private Float gyroX_voltage;
-	private Float gyroY_voltage;
+	private float accelX_voltage;
+	private float accelY_voltage;
+	private float accelZ_voltage;
+	private float gyroX_voltage;
+	private float gyroY_voltage;
 	
 	
 	//
@@ -283,7 +284,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		//final Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
 		
 		
-		locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 0 , 0, this);
+		//locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 10 , 16, this);
 
 		
 		
@@ -683,32 +684,37 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		//bike analog inputs
 		private AnalogInput accelX, accelY, accelZ, gyroX, gyroY;
 		
-		private Float gyroXrate;
-		private Float accelYval, accelXval, accelZval, accelXangle;
+		private float gyroXrate;
+		private float accelYval, accelXval, accelZval, accelXangle;
 		
 		private PwmOutput led_left_helmet, led_right_helmet;
 
 		private AnalogInput crash_x, crash_y;
 		
-		Float timer, left_dimmertimer = 0f, right_dimmertimer = 0f;
-		int dtime, left_ledtimeon = 0, right_ledtimeon = 0;
+		float timer, left_dimmertimer = 0f, right_dimmertimer = 0f;
+		int left_ledtimeon = 0, right_ledtimeon = 0;
+		
+		float dtime;
 		
 		boolean dimmertimerR = false, dimmertimerL = false;
 		
 
 
-		ArrayList<Float> sensorMedian_L = new ArrayList<Float>();
-		ArrayList<Float> sensorMedian_R = new ArrayList<Float>();
+		//ArrayList<Float> sensorMedian_L = new ArrayList<Float>();
+		//ArrayList<Float> sensorMedian_R = new ArrayList<Float>();
 
-		private Float sensorvalueL, sensorvalueR;
+		float[] sensorMedian_L = new float[11];
+		float[] sensorMedian_R = new float[11];
+		
+		private float sensorvalueL, sensorvalueR;
 		private boolean leftBlindspot 		= false;
 		private boolean prev_leftBlindspot 	= false; 
 		private boolean rightBlindspot	 	= false;
 		private boolean prev_rightBlindspot = false;
 		private boolean calibrated = false;
 			
-		private Float roll = 0f;
-		private Float crash_Xvoltage, crash_Yvoltage;
+		private float roll = 0f;
+		private float crash_Xvoltage, crash_Yvoltage;
 
 		/**
 		 * Called every time a connection with IOIO has been established.
@@ -786,9 +792,9 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			try {
 				//blindspot sensors
 				//left
-				sensorMedian_L.clear();
-				for ( int i = 0; i <= 11; i++){
-					sensorMedian_L.add(sensorValueL_input.getVoltage() *1000);
+				//sensorMedian_L.clear();
+				for ( int i = 0; i < 11; i++){
+					sensorMedian_L[i] = sensorValueL_input.getVoltage() * 1000;
 					//Log.i("SAMSS_LEFT", sensorMedian_L.get(i).toString());
 				}
 				sensorvalueL = Median(sensorMedian_L);
@@ -797,9 +803,9 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				//inchvalueL = sensorvalueL / (6.45f);   //convert to inches
 				
 				//right
-				sensorMedian_R.clear();
-				for ( int i = 0; i <= 11; i++){
-					sensorMedian_R.add(sensorValueR_input.getVoltage() *1000);
+				//sensorMedian_R.clear();
+				for ( int j = 0; j < 11; j++){
+					sensorMedian_R[j] = sensorValueR_input.getVoltage() * 1000;
 				}
 				sensorvalueR = Median(sensorMedian_R);
 				//Log.d("SAMSS_median_RIGHT", sensorvalueR.toString());
@@ -846,7 +852,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				
 				
 				
-				dtime = (int) (System.nanoTime() - timer);
+				dtime = ((float)System.nanoTime() - timer);
 				timer = (float) System.nanoTime();
 				if (dtime == 0 ){
 					
@@ -855,7 +861,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 				roll = kalmanCalculateX(accelXangle, gyroXrate, (dtime/1000000));
 				}
 				
-				//Log.d("SAMSS_angle", roll.toString());
+				//Log.d("SAMSS_angle", String.valueOf(roll));
 				
 				//log(roll.toString());
 				//updateRoll_nd_Pitch(roll.toString());
@@ -972,25 +978,28 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 			
 			
 			try {
-				crash_Xvoltage = crash_x.getVoltage() * 1000;
-				crash_Yvoltage = crash_y.getVoltage() * 1000;
+				crash_Xvoltage = crash_x.getVoltage();// * 1000;
+				crash_Yvoltage = crash_y.getVoltage();// * 1000;
 				
-				if (crash_Xvoltage > 1700){
-					Log.d("crashVoltage", crash_Xvoltage.toString());
+				if (crash_Xvoltage > 1.7){
+					Log.d("crashXVoltage", String.valueOf(crash_Xvoltage));
 				}
-				if (crash_Xvoltage > 1700){
-					Log.d("crashVoltage", crash_Xvoltage.toString());
+				if (crash_Xvoltage > 1.7){
+					Log.d("crashYVoltage", String.valueOf(crash_Yvoltage));
 				}
 				
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			
 			if (crash_Xvoltage > CRASH_THRESHOLD || crash_Yvoltage > CRASH_THRESHOLD){
 				
 				String[] msg = {"Crash detected. Dialing 9 1 1. Say cancel for false alarm."};
 				sendBTaudio(AUDIOMSG_TYPE_LOCAL, msg);
+				
+				while(tts.isSpeaking()){
+	        		
+	        	}
 				
 				tv1_.post(new Runnable(){ public void run(){ 
 	        		voiceRecognizerBusy = true;
@@ -1014,14 +1023,14 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
     float Q_gyroX   =  0.003f;  
     float R_angleX  =  0.03f;  
 
-    Float x_angle = 0f;
+    float x_angle = 0f;
     float x_bias = 0;
     float PX_00 = 0, PX_01 = 0, PX_10 = 0, PX_11 = 0;	
     float dtX, yX, SX;
     float KX_0, KX_1;
 
-  Float kalmanCalculateX(float newAngle, float newRate,int looptime) {
-    dtX = (float) (looptime)/1000;                                    // XXXXXXX arevoir
+  float kalmanCalculateX(float newAngle, float newRate,float looptime) {
+    dtX = (looptime)/1000;                                    // XXXXXXX arevoir
     x_angle += dtX * (newRate - x_bias);
     PX_00 +=  - dtX * (PX_10 + PX_01) + Q_angleX * dtX;
     PX_01 +=  - dtX * PX_11;
@@ -1045,17 +1054,17 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
   }
 //========================================
 	
-	public static float Median(ArrayList values)
+	public static float Median(float[] values)
 	{
-	    Collections.sort(values);
+		Arrays.sort(values);
 		
-	    if (values.size() % 2 == 1)
-	    	return (Float) values.get( values.size() / 2 );
+	    if (values.length % 2 == 1)
+	    	return values[values.length/ 2 ];
 	    else
 	    {
 	    	
-	    	float lower = (Float) values.get( (values.size()/2) - 1);
-	    	float upper = (Float) values.get( values.size() / 2);
+	    	float lower = values[ (values.length/2) - 1];
+	    	float upper = values[ values.length / 2];
 
 	    	return (lower + upper) / 2.0f;
 	    }	
