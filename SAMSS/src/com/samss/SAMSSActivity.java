@@ -275,20 +275,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		// Get the location manager
 		locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 		
-		
-		// Define the criteria how to select the location provider -> use
-		// default
-		Criteria criteria = new Criteria();
-		provider = locationManager.getBestProvider(criteria, false);
-		//final Location location = locationManager.getLastKnownLocation(provider);
-		//final Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-		
-		
-		//locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 10 , 16, this);
-
-		
-		
-		
+	
 		amanager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 		
 		tts= new TextToSpeech(SAMSSActivity.this, new TextToSpeech.OnInitListener() {
@@ -317,7 +304,25 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	     
 		 mToneGenerator = new ToneGenerator(AudioManager.STREAM_VOICE_CALL, ToneGenerator.MAX_VOLUME); 
 	        
-		 
+		 StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+
+		 StrictMode.setThreadPolicy(policy);
+	}
+	
+	@Override
+	public void onStart(){
+		
+		
+		// Define the criteria how to select the location provider -> use
+		// default
+		Criteria criteria = new Criteria();
+		provider = locationManager.getBestProvider(criteria, false);
+		//final Location location = locationManager.getLastKnownLocation(provider);
+		//final Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+		
+		
+		locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 10 , 16, this);
+		
 	}
 	
 	public void initializeManager() {
