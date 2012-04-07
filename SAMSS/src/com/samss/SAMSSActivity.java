@@ -309,7 +309,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	
 	@Override
 	public void onStart(){
-		
+		super.onStart();
 		//ConnectivityManager conMgr =  (ConnectivityManager)ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
 
 		// Define the criteria how to select the location provider -> use
@@ -329,7 +329,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	
 	@Override
 	public void onDestroy(){
-		
+		super.onDestroy();
 		locationManager.removeUpdates(mLocationListener);
 		
 	}
