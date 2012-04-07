@@ -2,6 +2,7 @@ package com.samss;
 
 import ioio.lib.api.AnalogInput;
 import ioio.lib.api.DigitalOutput;
+import ioio.lib.api.IOIO;
 import ioio.lib.api.PwmOutput;
 import ioio.lib.api.exception.ConnectionLostException;
 import ioio.lib.util.AbstractIOIOActivity;
@@ -36,13 +37,15 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
-import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.net.sip.SipAudioCall;
 import android.net.sip.SipException;
 import android.net.sip.SipManager;
 import android.net.sip.SipProfile;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -129,7 +132,7 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	private boolean gpsLock = false;
 	private LocationManager locationManager;
 	private String provider;
-	private LocationListener mLocationListener;
+	private LocationThread mLocationThread;
 	    
 	double lat,lng;
 	float heading;	
@@ -194,6 +197,9 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
     public SipProfile me 			= null;
     
     SipProfile.Builder builder 		= null;
+    
+    
+    private boolean IOIOConnected = false;
     
     //
     //	END VARIABLES & OBJECTS
@@ -304,6 +310,8 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	     
 		 mToneGenerator = new ToneGenerator(AudioManager.STREAM_VOICE_CALL, ToneGenerator.MAX_VOLUME); 
 	        
+		 mLocationThread = new LocationThread();
+		 mLocationThread.start();
 		 
 	}
 	
@@ -321,8 +329,11 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		//final Location location = locationManager.getLastKnownLocation(provider);
 		//final Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
 		
-		mLocationListener = new LocationThread();
-		locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 10 , 16, mLocationListener);
+		//mLocationListener = new LocationThread();
+		//locationManager.requestupdates(provider, MILLISECONDS_MIN * 10 , 16, mLocationListener);
+		
+		//mLocationThread.mLooper.prepare();
+		locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 10 , 16, mLocationListener, mLocationThread.mLooper);
 		
 	}
 
@@ -370,12 +381,12 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	            @Override
 	            public void onCallEstablished(SipAudioCall call) {
 	            	
-	            	startBluetooth();
+	            	//startBluetooth();
 	                voipEstablished = true;
 	            	log("onCallEstablished:");
 	            	
 	                call.startAudio();
-	                //call.setSpeakerMode(false);
+	                call.setSpeakerMode(true);
 	                //call.toggleMute();
 	            }
 	
@@ -607,7 +618,120 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 	    
 	};	
 
+	private LocationListener mLocationListener = new LocationListener() {
+		public void onLocationChanged(Location location) {
+			if(IOIOConnected){
+				Log.i("SAMSS/GPSlocationListener", "onLocationChanged");
+				//printLocation(location);
+				lat = (double) location.getLatitude();
+				lng = (double) location.getLongitude();
+				heading = location.getBearing();
+				gpsLock = true;
+				
+				if(gpsLock){
+		    		// send GPS cords to web service
+		    		Log.i("SAMSS/WebserviceGPS", "got to GPSTimer");
 	
+					String address = "http://olnoeve.no.de";
+	
+	
+					JSONObject json = connect(address + "/" + heading + "/" + lat + "/" + lng);
+	
+					try {
+						//Log.i("SAMSS/WebserviceResponse", json.toString(3));
+						log( json.toString(3) );
+						
+					} catch (JSONException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					//myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
+	
+					JSONObject traffic = new JSONObject();
+					JSONObject weather = new JSONObject();
+					JSONArray weatherAlerts = new JSONArray();
+					JSONArray trafficIncidents = new JSONArray();
+					JSONArray trafficConstruction = new JSONArray();
+					try {
+						weather = json.getJSONObject("Weather");
+						traffic = json.getJSONObject("Traffic");
+						//Log.i("SAMSS/JSON", traffic.toString());
+						weatherAlerts = weather.getJSONArray("Alerts");
+						trafficIncidents = traffic.getJSONArray("incidents");
+						trafficConstruction = traffic.getJSONArray("construction");
+					} catch (JSONException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+					ArrayList<String> msgs = new ArrayList<String>();
+					msgs.add("Found " 
+								+ trafficIncidents.length() 
+								+ " traffic incidents and " 
+								+ weatherAlerts.length() 
+								+ " weather alerts. Do you want to hear them?");
+					
+					//	Add all traffic incident messages to list first
+					for(int i = 0; i < trafficIncidents.length(); i++){
+	
+						
+						try {
+							msgs.add( trafficIncidents.getString(i) );
+						} catch (JSONException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+	
+					}
+					//	Then add all weather messages
+					for(int j = 0; j < weatherAlerts.length(); j++){
+	
+						
+						try {
+							msgs.add( weatherAlerts.getString(j) );
+						} catch (JSONException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+	
+					}
+					
+					//	Finally, send the list of messages to sendBTAudio with AUDIOMSG_TYPE_WEBSERVICE
+					try {
+						Log.i("SAMSS/WebserviceResponse", json.toString(3));
+					} catch (JSONException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					String[] alerts = msgs.toArray(new String[msgs.size()]);
+					sendBTaudio(AUDIOMSG_TYPE_WEBSERVICE, alerts);
+		    		
+				}
+				else
+					log("no gps lock");
+				
+			}
+			
+		}
+		
+		@Override
+		public void onProviderDisabled(String arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void onProviderEnabled(String provider) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void onStatusChanged(String provider, int status, Bundle extras) {
+			// TODO Auto-generated method stub
+			
+		}
+	
+	};
 	
 	
 	public static JSONObject connect(String url)
@@ -787,7 +911,13 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 
 			//xbeeIn = uart_.getInputStream();
 			//xbeeOut = uart_.getOutputStream();
-
+			
+			/*Criteria criteria = new Criteria();
+			provider = locationManager.getBestProvider(criteria, true);
+			mLocationThread.mLooper.prepare();
+			locationManager.requestLocationUpdates(provider, MILLISECONDS_MIN * 0 , 0, mLocationListener, mLocationThread.mLooper);*/
+		
+			IOIOConnected = true;
 		}
 
 		/**
@@ -1208,122 +1338,26 @@ public class SAMSSActivity extends AbstractIOIOActivity implements  OnUtteranceC
 		// TODO Auto-generated method stub
 		stopBluetooth();
 	}
+	
+	
 
 	
-	public class LocationThread extends Thread implements LocationListener{
-		
+	public class LocationThread extends Thread {
+		public Handler mHandler;
+		public Looper mLooper;
+	      public void run() {
+	          Looper.prepare();
 
-		public void onLocationChanged(Location location) {
-			Log.i("SAMSS/GPSlocationListener", "onLocationChanged");
-			//printLocation(location);
-			lat = (double) location.getLatitude();
-			lng = (double) location.getLongitude();
-			heading = location.getBearing();
-			gpsLock = true;
-			
-			if(gpsLock){
-	    		// send GPS cords to web service
-	    		Log.i("SAMSS/WebserviceGPS", "got to GPSTimer");
+	          mHandler = new Handler() {
+	              public void handleMessage(Message msg) {
+	                  // process incoming messages here
+	              }
+	          };
 
-				String address = "http://olnoeve.no.de";
-
-
-				JSONObject json = connect(address + "/" + heading + "/" + lat + "/" + lng);
-
-				try {
-					//Log.i("SAMSS/WebserviceResponse", json.toString(3));
-					log( json.toString(3) );
-					
-				} catch (JSONException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				//myHash.put(TextToSpeech.Engine.KEY_PARAM_STREAM, String.valueOf(AudioManager.STREAM_VOICE_CALL));
-
-				JSONObject traffic = new JSONObject();
-				JSONObject weather = new JSONObject();
-				JSONArray weatherAlerts = new JSONArray();
-				JSONArray trafficIncidents = new JSONArray();
-				JSONArray trafficConstruction = new JSONArray();
-				try {
-					weather = json.getJSONObject("Weather");
-					traffic = json.getJSONObject("Traffic");
-					//Log.i("SAMSS/JSON", traffic.toString());
-					weatherAlerts = weather.getJSONArray("Alerts");
-					trafficIncidents = traffic.getJSONArray("incidents");
-					trafficConstruction = traffic.getJSONArray("construction");
-				} catch (JSONException e1) {
-					// TODO Auto-generated catch block
-					e1.printStackTrace();
-				}
-				ArrayList<String> msgs = new ArrayList<String>();
-				msgs.add("Found " 
-							+ trafficIncidents.length() 
-							+ " traffic incidents and " 
-							+ weatherAlerts.length() 
-							+ " weather alerts. Do you want to hear them?");
-				
-				//	Add all traffic incident messages to list first
-				for(int i = 0; i < trafficIncidents.length(); i++){
-
-					
-					try {
-						msgs.add( trafficIncidents.getString(i) );
-					} catch (JSONException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-
-				}
-				//	Then add all weather messages
-				for(int j = 0; j < weatherAlerts.length(); j++){
-
-					
-					try {
-						msgs.add( weatherAlerts.getString(j) );
-					} catch (JSONException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-
-				}
-				
-				//	Finally, send the list of messages to sendBTAudio with AUDIOMSG_TYPE_WEBSERVICE
-				try {
-					Log.i("SAMSS/WebserviceResponse", json.toString(3));
-				} catch (JSONException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				String[] alerts = msgs.toArray(new String[msgs.size()]);
-				sendBTaudio(AUDIOMSG_TYPE_WEBSERVICE, alerts);
-	    		
-			}
-			else
-				log("no gps lock");
-			
-			
-			
-		}
-
-		@Override
-		public void onProviderDisabled(String arg0) {
-			// TODO Auto-generated method stub
-			
-		}
-
-		@Override
-		public void onProviderEnabled(String provider) {
-			// TODO Auto-generated method stub
-			
-		}
-
-		@Override
-		public void onStatusChanged(String provider, int status, Bundle extras) {
-			// TODO Auto-generated method stub
-			
-		}
-		
-	}
+	          Looper.loop();
+	          
+	          mLooper = Looper.myLooper();
+	      }
+	  }
 	
 }
